@@ -73,6 +73,10 @@ jobs:
           grep -q '^name: smart-agents-memory$' skills/smart-agents-memory/SKILL.md
           grep -q '^description: ' skills/smart-agents-memory/SKILL.md
 
+      - name: Install shellcheck
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
+
       - name: Check the scripts
         run: |
           shellcheck scripts/*.sh

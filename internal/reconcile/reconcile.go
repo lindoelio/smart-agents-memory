@@ -42,6 +42,13 @@ func (r *Reconciler) Import(ctx context.Context, corpus []memory.Entry) (int, in
 
 	added, updated := 0, 0
 	for _, candidate := range r.candidates() {
+		// A projection that this tool wrote is not news: only what a
+		// tool wrote after the last projection is worth importing.
+		if !r.Projections.LastProjection().IsZero() &&
+			!candidate.ModTime.IsZero() &&
+			!candidate.ModTime.After(r.Projections.LastProjection()) {
+			continue
+		}
 		key := memory.NormTitle(candidate.Title)
 		current, ok := byTitle[key]
 		if !ok {

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/native"
@@ -59,6 +60,12 @@ func (a *App) Index(ctx context.Context) (IndexReport, error) {
 	report.Exported = exported
 
 	if err := reconciler.SyncProfile(a.HotContent()); err != nil {
+		return report, err
+	}
+
+	// Everything the native stores hold is now a projection of the corpus:
+	// the next import must not read it back as news.
+	if err := a.Projections.SetLastProjection(time.Now()); err != nil {
 		return report, err
 	}
 
@@ -154,9 +161,18 @@ func (a *App) Migrate(ctx context.Context, apply bool) ([]Migration, error) {
 			changed = true
 		}
 
+		// The title stayed in the previous vocabulary.
+		if current, ok := legacyTitles[memory.NormTitle(e.Title)]; ok {
+			record(e.Path, fmt.Sprintf("title %q -> %q", e.Title, current))
+			rename = current
+			e.Title = current
+			changed = true
+		}
+
 		// The entry duplicates another one: the corpus keeps one note
-		// per fact.
-		if target, ok := mergedEntries[memory.NormTitle(e.Title)]; ok {
+		// per fact. The table speaks the current vocabulary, so the
+		// title is the one the entry has now.
+		if target, ok := mergedEntries[mergeKey(e)]; ok {
 			record(e.Path, fmt.Sprintf("merged into %q and removed", target))
 			if apply {
 				remover, ok := a.Vault.(vault.Remover)
@@ -168,13 +184,6 @@ func (a *App) Migrate(ctx context.Context, apply bool) ([]Migration, error) {
 				}
 			}
 			continue
-		}
-
-		// The title stayed in the previous vocabulary.
-		if current, ok := legacyTitles[memory.NormTitle(e.Title)]; ok {
-			record(e.Path, fmt.Sprintf("title %q -> %q", e.Title, current))
-			rename = current
-			changed = true
 		}
 
 		if changed && apply {
@@ -229,6 +238,14 @@ func (a *App) Migrate(ctx context.Context, apply bool) ([]Migration, error) {
 		}
 	}
 
+	// The projections of the previous layout are not news: the migration
+	// has already dealt with them.
+	if apply {
+		if err := a.Projections.SetLastProjection(time.Now()); err != nil {
+			return changes, err
+		}
+	}
+
 	sort.SliceStable(changes, func(i, j int) bool { return changes[i].Path < changes[j].Path })
 	return changes, nil
 }
@@ -240,10 +257,23 @@ var legacyTitles = map[string]string{
 	memory.NormTitle("Reconciliação do corpus: mtime decide quem manda"):    "Corpus reconciliation: mtime decides the winner",
 }
 
-// mergedEntries maps the entries that duplicate another one, by normalized
-// title, to the entry that keeps the fact.
+// mergedEntries maps the entries that duplicate another one to the entry
+// that keeps the fact. The key is the scope and the normalized title: two
+// entries may share a title while saying different things, and the scope is
+// what tells them apart.
 var mergedEntries = map[string]string{
-	memory.NormTitle("Nome"): "Name",
+	mergeKeyFor(memory.TypeUser, "Nome"):                                               "Name",
+	mergeKeyFor(memory.TypeLesson, "Memory language: English by default (2026-11-07)"): "Memory language: English by default (2026-11-07)",
+}
+
+// mergeKey is the key of an entry in the merge table.
+func mergeKey(e memory.Entry) string {
+	return mergeKeyFor(e.Type, e.Title)
+}
+
+// mergeKeyFor builds the key of the merge table.
+func mergeKeyFor(typ memory.Type, title string) string {
+	return string(typ) + "|" + memory.NormTitle(title)
 }
 
 // legacyType maps a legacy type to the current vocabulary.

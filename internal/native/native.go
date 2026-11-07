@@ -216,10 +216,13 @@ func ParseTopic(content, fileName string) (memory.Entry, bool) {
 	if title == "" {
 		return memory.Entry{}, false
 	}
+	// The marker carries the title for the runtime; it is not part of the
+	// body of the memory.
+	clean := strings.TrimSpace(strings.ReplaceAll(body, titleMark.ReplaceAllString(body, ""), ""))
 	return memory.Entry{
 		Title:       title,
 		Type:        memory.TypeLesson,
-		Body:        strings.TrimSpace(body),
+		Body:        clean,
 		NativeType:  "reference",
 		Source:      "minimax-topic",
 		Native:      string(TargetMiniMaxAgent),

@@ -6,6 +6,7 @@
 package projection
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -95,6 +96,41 @@ func (s *Store) Delete(target native.Target, rel string) error {
 		return nil
 	}
 	return err
+}
+
+// StateFile is where the state of the projections lives.
+const StateFile = ".smart-agents-memory-state.json"
+
+// projectionState is the small state the reconciliation needs.
+type projectionState struct {
+	// LastProjection is when the projections were last written.
+	LastProjection time.Time `json:"last_projection"`
+}
+
+// LastProjection returns when the projections were last written. The zero
+// time means never.
+func (s *Store) LastProjection() time.Time {
+	data, err := os.ReadFile(filepath.Join(s.root, StateFile))
+	if err != nil {
+		return time.Time{}
+	}
+	var state projectionState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return time.Time{}
+	}
+	return state.LastProjection
+}
+
+// SetLastProjection records that the projections were written now.
+func (s *Store) SetLastProjection(t time.Time) error {
+	if err := os.MkdirAll(s.root, 0o755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(projectionState{LastProjection: t}, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(s.root, StateFile), append(data, '\n'), 0o644)
 }
 
 // EnsureDirs creates the directories of every target.

@@ -19,8 +19,11 @@ import (
 const Name = "smart-agents-memory"
 
 // Materialize writes the embedded skill to dir and returns its path.
+//
+// The skill lands in <dir>/skills/<name>, the layout every tool expects:
+// a directory with a SKILL.md inside.
 func Materialize(dir string) (string, error) {
-	root := filepath.Join(dir, "skills", Name)
+	base := filepath.Join(dir, "skills")
 	err := fs.WalkDir(assets.SkillFS, "skills", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -29,7 +32,7 @@ func Materialize(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
-		target := filepath.Join(root, rel)
+		target := filepath.Join(base, rel)
 		if d.IsDir() {
 			return os.MkdirAll(target, 0o755)
 		}
@@ -45,5 +48,5 @@ func Materialize(dir string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("cannot materialize the skill: %w", err)
 	}
-	return root, nil
+	return filepath.Join(base, Name), nil
 }

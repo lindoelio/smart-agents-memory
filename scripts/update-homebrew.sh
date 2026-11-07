@@ -85,7 +85,7 @@ EOF
 
 echo "==> Updating the formula of $TAP_REPOSITORY"
 
-git clone --depth 1 "https://x-access-token:$HOMEBREW_TAP_TOKEN@github.com/$TAP_REPOSITORY.git" "$WORK/tap"
+git clone --depth 1 "https://x-access-token:$TAP_TOKEN@github.com/$TAP_REPOSITORY.git" "$WORK/tap"
 cp "$FORMULA" "$WORK/tap/Formula/smart-agents-memory.rb"
 
 cd "$WORK/tap"

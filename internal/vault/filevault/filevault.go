@@ -412,13 +412,22 @@ func (s *Store) discover() ([]string, error) {
 }
 
 // searchableFiles returns the notes a search should scan.
+//
+// Only the entries, the notes of the projects and the hot tier. The index
+// notes and the readme of the store are not memory: searching them would
+// repeat every entry twice.
 func (s *Store) searchableFiles() ([]string, error) {
 	var out []string
 	corpus, err := s.discover()
 	if err != nil {
 		return nil, err
 	}
-	out = append(out, corpus...)
+	for _, f := range corpus {
+		if _, ok, err := s.readEntry(f); err != nil || !ok {
+			continue
+		}
+		out = append(out, f)
+	}
 	projects := filepath.Join(s.root, "projects")
 	if files, err := os.ReadDir(projects); err == nil {
 		for _, f := range files {

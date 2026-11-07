@@ -1,0 +1,11 @@
+.DS_Store
+*.log
+*.tmp
+tmp/
+.idea/
+.vscode/
+*.swp
+__pycache__/
+.venv/
+bin/smart-agents-memory
+/smart-agents-memory

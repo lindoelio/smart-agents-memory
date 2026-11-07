@@ -1,0 +1,187 @@
+name: Publish Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+env:
+  GO_VERSION: '1.27.3'
+  # The tap the release pipeline updates. The formula is never edited by hand.
+  HOMEBREW_TAP_REPOSITORY: 'lindoelio/homebrew-smart-agents-memory'
+
+jobs:
+  verify:
+    name: Verify the release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Verify the tag matches the declared version
+        id: version
+        run: |
+          DECLARED_VERSION="$(sh scripts/version.sh)"
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "$DECLARED_VERSION" ]; then
+            echo "The release tag ${GITHUB_REF_NAME} does not match the declared version ${DECLARED_VERSION}. Nothing was published." >&2
+            exit 1
+          fi
+          echo "version=${DECLARED_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Check the formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run the test suite
+        run: go test ./...
+
+      - name: Build the release binary
+        run: go build -trimpath -ldflags "-s -w" -o dist/smart-agents-memory ./cmd/smart-agents-memory
+
+      - name: Run the built binary
+        run: |
+          BINARY_VERSION="$(./dist/smart-agents-memory version)"
+          if [ "$BINARY_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "The binary reports $BINARY_VERSION, but the declared version is ${{ steps.version.outputs.version }}" >&2
+            exit 1
+          fi
+          ./dist/smart-agents-memory --help
+
+      - name: Upload the binary of this platform
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-agents-memory-linux-amd64
+          path: dist/smart-agents-memory
+          if-no-files-found: error
+
+  build:
+    name: Cross compile ${{ matrix.platform }}
+    needs: verify
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: darwin-arm64
+            goos: darwin
+            goarch: arm64
+          - platform: darwin-amd64
+            goos: darwin
+            goarch: amd64
+          - platform: linux-arm64
+            goos: linux
+            goarch: arm64
+          - platform: linux-amd64
+            goos: linux
+            goarch: amd64
+          - platform: windows-amd64
+            goos: windows
+            goarch: amd64
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build the binary
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: '0'
+        run: |
+          mkdir -p dist
+          go build -trimpath -ldflags "-s -w" \
+            -o "dist/smart-agents-memory-${{ matrix.platform }}${{ matrix.goos == 'windows' && '.exe' || '' }}" \
+            ./cmd/smart-agents-memory
+
+      - name: Upload the binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: smart-agents-memory-${{ matrix.platform }}
+          path: dist/smart-agents-memory-${{ matrix.platform }}*
+          if-no-files-found: error
+
+  release:
+    name: Publish the release
+    needs: [verify, build]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download the binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Name the assets
+        run: |
+          cd dist
+          for file in smart-agents-memory-*; do
+            case "$file" in
+              smart-agents-memory-linux-amd64|smart-agents-memory-darwin-arm64|smart-agents-memory-darwin-amd64|smart-agents-memory-linux-arm64|smart-agents-memory-windows-amd64.exe) ;;
+              *) mv "$file" "smart-agents-memory-${file#smart-agents-memory-}" ;;
+            esac
+          done
+          ls -1
+
+      - name: Compute the checksums
+        run: |
+          cd dist
+          sha256sum smart-agents-memory-* > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes \
+            dist/smart-agents-memory-* dist/SHA256SUMS
+
+  homebrew:
+    name: Update the Homebrew formula
+    needs: [verify, release]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Download the binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Update the formula of the tap
+        env:
+          HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: sh scripts/update-homebrew.sh "${{ needs.verify.outputs.version }}" dist

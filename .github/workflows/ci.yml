@@ -1,0 +1,123 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The Go toolchain is pinned: the module declares the same version in go.mod.
+  GO_VERSION: '1.27.3'
+
+jobs:
+  build:
+    name: Build
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Check the formatting
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "These files are not formatted:" >&2
+            echo "$unformatted" >&2
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Run the test suite
+        run: go test ./...
+
+      - name: Build the module
+        run: go build ./...
+
+      - name: Build the release binary
+        run: go build -trimpath -ldflags "-s -w" -o smart-agents-memory ./cmd/smart-agents-memory
+
+      - name: Check the stamped version
+        run: |
+          DECLARED_VERSION="$(sh scripts/version.sh)"
+          BINARY_VERSION="$(./smart-agents-memory version)"
+          if [ "$BINARY_VERSION" != "$DECLARED_VERSION" ]; then
+            echo "The binary reports $BINARY_VERSION, but the declared version is $DECLARED_VERSION" >&2
+            exit 1
+          fi
+
+      - name: Check the skill
+        run: |
+          test -f skills/smart-agents-memory/SKILL.md
+          head -1 skills/smart-agents-memory/SKILL.md | grep -q '^---$'
+          grep -q '^name: smart-agents-memory$' skills/smart-agents-memory/SKILL.md
+          grep -q '^description: ' skills/smart-agents-memory/SKILL.md
+
+      - name: Check the scripts
+        run: |
+          shellcheck scripts/*.sh
+          for file in scripts/*.sh; do
+            sh -n "$file"
+          done
+
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Build the release binary
+        run: go build -trimpath -ldflags "-s -w" -o smart-agents-memory ./cmd/smart-agents-memory
+
+      - name: The binary answers
+        run: ./smart-agents-memory version
+
+      - name: The binary wires a store up
+        run: |
+          mkdir -p "$(mktemp -d)"
+          STORE="$(mktemp -d)"
+          HOME_DIR="$(mktemp -d)"
+          export HOME="$HOME_DIR"
+          mkdir -p "$STORE/corpus/lesson"
+          cat > "$STORE/corpus/lesson/a-lesson.md" <<'ENTRY'
+          ---
+          title: "A lesson"
+          type: lesson
+          date: 2026-11-07
+          ---
+
+          ## A lesson
+
+          The rule, and why it matters.
+          ENTRY
+          ./smart-agents-memory --vault obsidian --memory-home "$STORE" index
+          ./smart-agents-memory --vault obsidian --memory-home "$STORE" search "lesson"
+          ./smart-agents-memory --vault obsidian --memory-home "$STORE" install
+          ./smart-agents-memory --vault obsidian --memory-home "$STORE" doctor

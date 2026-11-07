@@ -1,0 +1,11 @@
+{
+  "$schema": "https://skills.sh/schemas/skills.sh.schema.json",
+  "notGrouped": "bottom",
+  "groupings": [
+    {
+      "title": "Shared memory",
+      "description": "One corpus, many harnesses: search the user's memory and record what is worth keeping.",
+      "skills": ["smart-agents-memory"]
+    }
+  ]
+}

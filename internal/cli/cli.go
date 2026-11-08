@@ -28,6 +28,9 @@ var legacyFlags = map[string]string{
 	"--fonte":   "--source",
 }
 
+// showVersion tells the command line to print the version and stop.
+var showVersion bool
+
 // Run executes one invocation and returns the exit code.
 func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 	opts := config.Options{}
@@ -42,6 +45,13 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 			return 0
 		}
 		return 2
+	}
+
+	// The version is asked for before anything else: it must work
+	// without a store, a configuration, or a network.
+	if showVersion {
+		fmt.Fprintln(out, version.Version)
+		return 0
 	}
 
 	rest := global.Args()
@@ -106,6 +116,7 @@ func build(opts config.Options, out, errOut io.Writer) (*app.App, error) {
 // the command, and again by the command itself, and the second parse must
 // not wipe what the first one found.
 func registerGlobals(fs *flag.FlagSet, opts *config.Options) {
+	fs.BoolVar(&showVersion, "version", false, "print the version and exit")
 	fs.StringVar(&opts.Vault, "vault", opts.Vault, "storage gateway: obsidian (default), disk, sqlite, notion")
 	fs.StringVar(&opts.MemoryHome, "memory-home", opts.MemoryHome, "root of the store")
 	fs.StringVar(&opts.ConfigPath, "config", opts.ConfigPath, "configuration file")
@@ -449,6 +460,7 @@ Commands:
   version              print the version
 
 Global flags:
+  --version                print the version and exit
   --vault <name>           storage gateway: obsidian (default), disk, sqlite, notion
   --memory-home <path>     root of the store
   --config <path>          configuration file

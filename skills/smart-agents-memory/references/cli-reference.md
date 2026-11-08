@@ -7,6 +7,7 @@ local projections.
 
 | Flag | Meaning |
 |---|---|
+| `--version` | Print the version and exit. It needs no store and no configuration |
 | `--vault <name>` | Backend: `obsidian` (default), `disk`, `sqlite`, `notion` |
 | `--memory-home <path>` | Root of the store, for the file gateways |
 | `--config <path>` | Configuration file (default `~/.config/smart-agents-memory/config.json`) |

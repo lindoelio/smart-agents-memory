@@ -122,3 +122,25 @@ func TestPathPrintsTheStore(t *testing.T) {
 		t.Fatalf("the path is %q, want %q", strings.TrimSpace(out), root)
 	}
 }
+
+func TestTheVersionFlagAnswersWithoutAStore(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	code, out, errOut := run(t, "--version")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s", code, errOut)
+	}
+	if strings.TrimSpace(out) == "" {
+		t.Fatal("the version is empty")
+	}
+}
+
+func TestTheHelpAnswersWithoutAStore(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	code, out, _ := run(t, "--help")
+	if code != 0 {
+		t.Fatalf("the exit code is %d", code)
+	}
+	if !strings.Contains(out, "Usage:") {
+		t.Fatalf("the help is missing: %q", out)
+	}
+}

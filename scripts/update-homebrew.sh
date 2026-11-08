@@ -68,10 +68,9 @@ class SmartAgentsMemory < Formula
     end
   end
 
-  on_windows do
-    url "https://github.com/$REPO/releases/download/v$VERSION/smart-agents-memory-windows-amd64.exe"
-    sha256 "$(asset_sha smart-agents-memory-windows-amd64.exe)"
-  end
+  # Homebrew does not run on Windows, and its formula language has no
+  # block for it. The Windows binary is published in the release, for the
+  # people who download it directly.
 
   def install
     bin.install Dir["smart-agents-memory-*"].first => "smart-agents-memory"

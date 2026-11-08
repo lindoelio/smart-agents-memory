@@ -161,10 +161,26 @@ jobs:
           TAG: ${{ github.ref_name }}
           VERSION: ${{ needs.verify.outputs.version }}
         run: |
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --generate-notes \
-            dist/smart-agents-memory-* dist/SHA256SUMS
+          # The body of the release is the section of the changelog that
+          # describes this version.
+          NOTES="$(awk -v version="$VERSION" '
+            $0 ~ "^## \\[" version "\\]" { inside = 1; next }
+            inside && /^## / { exit }
+            inside { print }
+          ' CHANGELOG.md)"
+          if [ -z "$NOTES" ]; then
+            echo "No changelog section for $VERSION; the release notes are generated from the commits." >&2
+            gh release create "$TAG" \
+              --title "$TAG" \
+              --generate-notes \
+              dist/smart-agents-memory-* dist/SHA256SUMS
+          else
+            printf '%s\n' "$NOTES" > NOTES.md
+            gh release create "$TAG" \
+              --title "Smart Agents Memory $VERSION" \
+              --notes-file NOTES.md \
+              dist/smart-agents-memory-* dist/SHA256SUMS
+          fi
 
   homebrew:
     name: Update the Homebrew formula

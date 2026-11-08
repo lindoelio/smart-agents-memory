@@ -67,13 +67,6 @@ jobs:
           fi
           ./dist/smart-agents-memory --help
 
-      - name: Upload the binary of this platform
-        uses: actions/upload-artifact@v4
-        with:
-          name: smart-agents-memory-linux-amd64
-          path: dist/smart-agents-memory
-          if-no-files-found: error
-
   build:
     name: Cross compile ${{ matrix.platform }}
     needs: verify
@@ -132,22 +125,14 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
       - name: Download the binaries
         uses: actions/download-artifact@v4
         with:
           path: dist
           merge-multiple: true
-
-      - name: Name the assets
-        run: |
-          cd dist
-          for file in smart-agents-memory-*; do
-            case "$file" in
-              smart-agents-memory-linux-amd64|smart-agents-memory-darwin-arm64|smart-agents-memory-darwin-amd64|smart-agents-memory-linux-arm64|smart-agents-memory-windows-amd64.exe) ;;
-              *) mv "$file" "smart-agents-memory-${file#smart-agents-memory-}" ;;
-            esac
-          done
-          ls -1
 
       - name: Compute the checksums
         run: |
@@ -159,8 +144,10 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
-          VERSION: ${{ needs.verify.outputs.version }}
         run: |
+          # The tag is the version: the verify job already made sure it
+          # matches the one declared in the code.
+          VERSION="${TAG#v}"
           # The body of the release is the section of the changelog that
           # describes this version.
           NOTES="$(awk -v version="$VERSION" '
@@ -200,4 +187,5 @@ jobs:
       - name: Update the formula of the tap
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-        run: sh scripts/update-homebrew.sh "${{ needs.verify.outputs.version }}" dist
+          TAG: ${{ github.ref_name }}
+        run: sh scripts/update-homebrew.sh "${TAG#v}" dist

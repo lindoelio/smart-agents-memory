@@ -166,15 +166,20 @@ func Resolve(opts Options) (vault.Config, string, error) {
 
 	if backend == "obsidian" || backend == "disk" {
 		if cfg.MemoryHome == "" {
-			home, err := DiscoverMemoryHome()
-			if err != nil {
-				return cfg, path, err
+			// A store that was not found is not an error: the install
+			// command creates one, and the other commands report it.
+			if home, err := DiscoverMemoryHome(); err == nil {
+				cfg.MemoryHome = home
 			}
-			cfg.MemoryHome = home
 		}
 	}
 
 	return cfg, path, nil
+}
+
+// DefaultStorePath is where a store is created when there is none.
+func DefaultStorePath() string {
+	return filepath.Join(userHome(), "Smart Agents Memory")
 }
 
 // DiscoverMemoryHome finds the store in the iCloud vaults of the machine.
@@ -224,6 +229,7 @@ func LocalRoot(cfg vault.Config) string {
 		if cfg.MemoryHome != "" {
 			return cfg.MemoryHome
 		}
+		return DefaultStorePath()
 	}
 	return cfg.ProjectionRoot
 }

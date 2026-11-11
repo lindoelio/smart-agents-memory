@@ -9,7 +9,9 @@ import (
 
 	"github.com/lindoelio/smart-agents-memory/internal/config"
 	"github.com/lindoelio/smart-agents-memory/internal/link"
+	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/native"
+	"github.com/lindoelio/smart-agents-memory/internal/projection"
 	"github.com/lindoelio/smart-agents-memory/internal/skill"
 )
 
@@ -70,6 +72,39 @@ func (a *App) LinkTargets() []LinkTarget {
 	return targets
 }
 
+// ensureStore creates the store when it is not there.
+func (a *App) ensureStore() error {
+	root := a.LocalRoot
+	if root == "" {
+		root = config.DefaultStorePath()
+		a.LocalRoot = root
+		a.Projections = projection.New(root)
+	}
+	for _, dir := range []string{
+		filepath.Join(root, "corpus", string(memory.TypeUser)),
+		filepath.Join(root, "corpus", string(memory.TypeLesson)),
+		filepath.Join(root, "corpus", string(memory.TypeProject)),
+		filepath.Join(root, "corpus", string(memory.TypeReference)),
+		filepath.Join(root, "projects"),
+		filepath.Join(root, "log"),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	if _, err := os.Stat(a.HotPath()); os.IsNotExist(err) {
+		hot := "---\n" +
+			"description: Shared memory — the profile and the permanent rules. Read before working.\n" +
+			"type: index\n" +
+			"alwaysApply: true\n" +
+			"---\n\n" + native.HotProfileStart + "\n" + native.HotProfileEnd + "\n"
+		if err := os.WriteFile(a.HotPath(), []byte(hot), 0o644); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // skillDirs returns the skill directories of every tool.
 func skillDirs(home string) []string {
 	return []string{
@@ -86,6 +121,8 @@ func skillDirs(home string) []string {
 
 // InstallResult is the outcome of the install command.
 type InstallResult struct {
+	// Store is where the memory lives.
+	Store string
 	// Lines describe what was done.
 	Lines []string
 	// SkillRoot is where the skill was materialized.
@@ -94,10 +131,25 @@ type InstallResult struct {
 
 // Install links the tools to the store and materializes the skill.
 //
-// It is idempotent: running it again changes nothing.
+// It is idempotent: running it again changes nothing. It also creates the
+// store when there is none, so a machine that just installed the binary is
+// wired up in one command.
 func (a *App) Install(ctx context.Context) (InstallResult, error) {
 	result := InstallResult{}
+	if err := a.ensureStore(); err != nil {
+		return result, err
+	}
+	result.Store = a.LocalRoot
 	if err := a.Projections.EnsureDirs(); err != nil {
+		return result, err
+	}
+	// The projections and the index are materialized right away: a store
+	// that was just created is already whole, and the doctor has nothing
+	// to complain about.
+	if err := a.ensureSkeleton(); err != nil {
+		return result, err
+	}
+	if _, err := a.Index(ctx); err != nil {
 		return result, err
 	}
 

@@ -548,3 +548,42 @@ func TestMigrateRenamesTheEntriesAndRemovesTheDuplicates(t *testing.T) {
 		t.Fatal("the orphan projection was not removed")
 	}
 }
+
+func TestInstallCreatesAWholeStore(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	// A store that does not exist yet.
+	if err := os.RemoveAll(filepath.Join(h.root, "corpus")); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := h.app.Install(ctx)
+	if err != nil {
+		t.Fatalf("cannot install: %v", err)
+	}
+	if result.Store != h.root {
+		t.Fatalf("the store is %q, want %q", result.Store, h.root)
+	}
+	for _, dir := range []string{"user", "lesson", "project", "reference"} {
+		path := filepath.Join(h.root, "corpus", dir)
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
+			t.Fatalf("the folder %s is missing: %v", dir, err)
+		}
+	}
+	for _, file := range []string{"MEMORY.md", "projects", "log"} {
+		if _, err := os.Stat(filepath.Join(h.root, file)); err != nil {
+			t.Fatalf("%s is missing: %v", file, err)
+		}
+	}
+	// The store that was just created is whole: the doctor has nothing to
+	// say about it.
+	report, err := h.app.Doctor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK() {
+		t.Fatalf("the doctor found problems: %v", report.Problems)
+	}
+}

@@ -4,6 +4,31 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1] — 2026-11-11
+
+The first release worked, but the first run of a new machine did not.
+
+### Added
+
+- **`--version` answers without a store.** It is asked for before anything
+  else: no configuration, no store, no network.
+
+### Changed
+
+- **`install` creates the store.** A machine that just installed the binary
+  is wired up in one command: the store is created with its corpus, its
+  project notes, its log, its hot tier, the native projections and the
+  index. The default is `~/Smart Agents Memory`.
+- **The commands that need a store say so.** They name the path they looked
+  at, and they point at the command that creates it.
+
+### Fixed
+
+- **The formula of the Homebrew tap had a block for Windows.** The formula
+  language of Homebrew knows only macOS and Linux, and the block was a
+  syntax error that broke the install. The Windows binary is still published
+  in the release.
+
 ## [0.1.0] — 2026-11-08
 
 The first release. The project was previously known as `memoria`, a Python
@@ -52,4 +77,5 @@ CLI named `memoria` with a skill called `memoria-compartilhada`.
 - The Python implementation, and the shell launcher that found the store in
   the iCloud vault.
 
+[0.1.1]: https://github.com/lindoelio/smart-agents-memory/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lindoelio/smart-agents-memory/releases/tag/v0.1.0

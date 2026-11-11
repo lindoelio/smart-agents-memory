@@ -164,6 +164,10 @@ func cmdSearch(ctx context.Context, opts config.Options, args []string, out, err
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
+	if err := a.RequireStore(); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
 	return searchAndPrint(ctx, a, query, *limit, out, errOut)
 }
 
@@ -211,6 +215,10 @@ func cmdBrief(ctx context.Context, opts config.Options, args []string, out, errO
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
+	if err := a.RequireStore(); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
 	text, err := a.Brief(ctx, *project, *query, *limit)
 	if err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
@@ -245,6 +253,10 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 	}
 	a, err := build(opts, out, errOut)
 	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(); err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
@@ -300,6 +312,10 @@ func cmdIndex(ctx context.Context, opts config.Options, args []string, out, errO
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
+	if err := a.RequireStore(); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
 	report, err := a.Index(ctx)
 	if err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
@@ -341,6 +357,7 @@ func cmdInstall(ctx context.Context, opts config.Options, args []string, out, er
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
+	fmt.Fprintf(out, "store: %s\n", result.Store)
 	for _, line := range result.Lines {
 		fmt.Fprintln(out, "[ok] "+line)
 	}

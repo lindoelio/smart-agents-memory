@@ -5,7 +5,7 @@
 package version
 
 // Version is the current release of Smart Agents Memory.
-const Version = "0.1.0"
+const Version = "0.1.1"
 
 // Name is the product name, used in help output and user-facing messages.
 const Name = "smart-agents-memory"

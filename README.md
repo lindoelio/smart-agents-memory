@@ -65,6 +65,19 @@ smart-agents-memory install
 That links your tools to the store and materializes the skill. It is
 idempotent, and it repairs a link that a tool overwrote.
 
+It also creates the store when there is none — at `~/Smart Agents Memory` by
+default — so a machine that just installed the binary is ready in one
+command. Point it somewhere else with `--memory-home`, or with the
+`memory_home` key of the configuration file:
+
+```bash
+smart-agents-memory --memory-home ~/Documents/MyVault/Smart\ Agents\ Memory install
+```
+
+The store is a folder of Markdown notes. Put it inside your Obsidian vault
+if you want to read and edit the memory by hand; point it at a SQLite
+database, or at a Notion database, if you prefer those.
+
 ## Use it
 
 ```bash

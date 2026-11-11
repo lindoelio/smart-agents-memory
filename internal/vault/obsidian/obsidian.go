@@ -8,8 +8,6 @@
 package obsidian
 
 import (
-	"errors"
-
 	"github.com/lindoelio/smart-agents-memory/internal/vault"
 	"github.com/lindoelio/smart-agents-memory/internal/vault/filevault"
 )
@@ -19,9 +17,6 @@ const IndexName = "Smart Agents Memory.md"
 
 func init() {
 	vault.Register("obsidian", func(cfg vault.Config) (vault.Vault, error) {
-		if cfg.MemoryHome == "" {
-			return nil, errors.New("the obsidian gateway needs a memory home")
-		}
 		return filevault.New(cfg.MemoryHome, filevault.Options{
 			Kind:          "obsidian",
 			Recursive:     true,

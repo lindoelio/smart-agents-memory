@@ -40,6 +40,11 @@ type App struct {
 
 // New builds the application for a configuration.
 func New(cfg vault.Config, configPath string, out, errOut io.Writer) (*App, error) {
+	// A machine that has no store yet gets the default one: the install
+	// command creates it.
+	if (cfg.Backend == "obsidian" || cfg.Backend == "disk") && cfg.MemoryHome == "" {
+		cfg.MemoryHome = config.DefaultStorePath()
+	}
 	store, err := vault.Open(cfg)
 	if err != nil {
 		return nil, err
@@ -54,6 +59,21 @@ func New(cfg vault.Config, configPath string, out, errOut io.Writer) (*App, erro
 		Out:         out,
 		Err:         errOut,
 	}, nil
+}
+
+// StoreExists reports whether the store is there.
+func (a *App) StoreExists() bool {
+	corpus := filepath.Join(a.LocalRoot, "corpus")
+	info, err := os.Stat(corpus)
+	return err == nil && info.IsDir()
+}
+
+// RequireStore returns an error when there is no store yet.
+func (a *App) RequireStore() error {
+	if a.StoreExists() {
+		return nil
+	}
+	return fmt.Errorf("no memory store at %s — run `smart-agents-memory install` to create one", a.LocalRoot)
 }
 
 // Reconciler builds the reconciler of this application.

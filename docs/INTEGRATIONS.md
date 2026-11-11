@@ -15,15 +15,14 @@ Neither carries heavy content.
 
 ## The links
 
-`smart-agents-memory install` creates eighteen symlinks.
+`smart-agents-memory install` creates seventeen symlinks.
 
-### The stores — four links, to directories
+### The stores — three links, to directories
 
 | Tool | Link | Reads |
 |---|---|---|
-| MiniMax Code | `~/.minimax/memory/` | The profile, injected in every session |
-| MiniMax Code | `~/.minimax/agents/main/memory/` | The lessons, as topic files |
-| MiniMax Code | `~/.minimax/memories/` | The new runtime store |
+| MiniMax Code | `~/.minimax/memory/` | The hot tier, injected in every session |
+| MiniMax Code | `~/.minimax/agents/main/memory/` | Cold entries as topic files, and hot agent entries in `MEMORY.md` |
 | Qwen Code | `~/.qwen/memories/` | Its topics |
 
 ### The instruction slots — six links, to files
@@ -70,9 +69,9 @@ The memory is not dumped into the context. In MiniMax Code:
 
 | Block | What it is |
 |---|---|
-| The user profile | The `hot` entries: the profile and the permanent rules |
+| The user profile | The `hot` entries, inside the markers |
 | The topic list | Only the name and the description of each `cold` entry |
-| The agent memory tail | Nothing, on purpose: the file is empty |
+| The agent memory | The `hot` entries whose projection is `minimax-agent`, and nothing when there are none |
 
 The body of a lesson is read when the tool decides it needs it, through the
 topic reader of the runtime or through `smart-agents-memory search`. That is

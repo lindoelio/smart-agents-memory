@@ -101,6 +101,13 @@ func TestSearchWithoutAQueryFails(t *testing.T) {
 	}
 }
 
+func TestNotionIsRejected(t *testing.T) {
+	code, _, errOut := run(t, "--vault", "notion", "path")
+	if code == 0 || !strings.Contains(errOut, "0.2.0") {
+		t.Fatalf("code %d, error %q", code, errOut)
+	}
+}
+
 func TestAnUnknownCommandFails(t *testing.T) {
 	code, _, errOut := run(t, "nonsense")
 	if code != 2 {

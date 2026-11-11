@@ -39,12 +39,10 @@ type App struct {
 }
 
 // New builds the application for a configuration.
+//
+// The configuration already names the store. Choosing a default path is
+// the configuration's job, so a use case never branches on a gateway name.
 func New(cfg vault.Config, configPath string, out, errOut io.Writer) (*App, error) {
-	// A machine that has no store yet gets the default one: the install
-	// command creates it.
-	if (cfg.Backend == "obsidian" || cfg.Backend == "disk") && cfg.MemoryHome == "" {
-		cfg.MemoryHome = config.DefaultStorePath()
-	}
 	store, err := vault.Open(cfg)
 	if err != nil {
 		return nil, err
@@ -61,19 +59,9 @@ func New(cfg vault.Config, configPath string, out, errOut io.Writer) (*App, erro
 	}, nil
 }
 
-// StoreExists reports whether the store is there.
-func (a *App) StoreExists() bool {
-	corpus := filepath.Join(a.LocalRoot, "corpus")
-	info, err := os.Stat(corpus)
-	return err == nil && info.IsDir()
-}
-
 // RequireStore returns an error when there is no store yet.
-func (a *App) RequireStore() error {
-	if a.StoreExists() {
-		return nil
-	}
-	return fmt.Errorf("no memory store at %s — run `smart-agents-memory install` to create one", a.LocalRoot)
+func (a *App) RequireStore(ctx context.Context) error {
+	return a.Vault.Ready(ctx)
 }
 
 // Reconciler builds the reconciler of this application.
@@ -104,19 +92,31 @@ func (a *App) Search(ctx context.Context, query string, limit int) ([]vault.Hit,
 	return a.Vault.Search(ctx, query, limit)
 }
 
-// Brief builds the context package: the hot tier, the notes of a project
-// when asked, and the matches of a query when asked.
-func (a *App) Brief(ctx context.Context, project, query string, limit int) (string, error) {
+// Brief builds the context package: the hot tier, the index of the corpus,
+// and the notes of a project when asked. A query is searched by the command,
+// so the bodies of cold entries stay out of this text.
+func (a *App) Brief(ctx context.Context, project, _ string, _ int) (string, error) {
 	var parts []string
 	if hot := stripFrontmatter(a.HotContent()); strings.TrimSpace(hot) != "" {
 		parts = append(parts, strings.TrimRight(hot, "\n"))
 	}
+	corpus, err := a.Vault.Entries(ctx)
+	if err != nil {
+		return "", err
+	}
+	if index := renderBriefIndex(corpus); index != "" {
+		parts = append(parts, index)
+	}
 	if project != "" {
-		notes, ok, err := a.projectNote(ctx, project)
+		holder, ok := a.Vault.(vault.ProjectNotes)
+		if !ok {
+			return "", fmt.Errorf("the %s gateway does not keep project notes", a.Vault.Kind())
+		}
+		notes, found, err := holder.ProjectNote(ctx, project)
 		if err != nil {
 			return "", err
 		}
-		if ok {
+		if found {
 			parts = append(parts, fmt.Sprintf("\n## Project: %s\n\n%s", project, strings.TrimSpace(notes)))
 		} else {
 			fmt.Fprintf(a.Err, "project '%s' not found\n", project)
@@ -125,13 +125,39 @@ func (a *App) Brief(ctx context.Context, project, query string, limit int) (stri
 	return strings.Join(parts, "\n"), nil
 }
 
-// projectNote reads the notes of a project, when the gateway keeps them.
-func (a *App) projectNote(ctx context.Context, name string) (string, bool, error) {
-	holder, ok := a.Vault.(vault.ProjectNotes)
-	if !ok {
-		return "", false, nil
+// renderBriefIndex lists the corpus without the bodies. The hot tier is
+// already in the context; the rest is a line each.
+func renderBriefIndex(corpus []memory.Entry) string {
+	var b strings.Builder
+	b.WriteString("\n## Index\n")
+	any := false
+	for _, typ := range memory.Types {
+		var lines []string
+		for _, e := range corpus {
+			if e.Type != typ {
+				continue
+			}
+			line := "- " + e.Title
+			if e.Description != "" {
+				line += " — " + e.Description
+			}
+			if e.EffectiveTier() == memory.TierHot {
+				line += " (hot)"
+			}
+			lines = append(lines, line)
+		}
+		if len(lines) == 0 {
+			continue
+		}
+		any = true
+		b.WriteString("\n### " + string(typ) + "\n\n")
+		b.WriteString(strings.Join(lines, "\n"))
+		b.WriteString("\n")
 	}
-	return holder.ProjectNote(ctx, name)
+	if !any {
+		return ""
+	}
+	return strings.TrimRight(b.String(), "\n")
 }
 
 // AddOptions are the options of a write.
@@ -148,6 +174,10 @@ type AddOptions struct {
 	Native string
 	// Tier is hot for what is always true, cold for the rest.
 	Tier string
+	// Description is the one line a runtime injects for a cold entry.
+	Description string
+	// Reason is why an entry was appended to the profile.
+	Reason string
 	// Tags are keywords.
 	Tags []string
 	// Force writes even when the title already exists.
@@ -183,6 +213,13 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 	if native != "minimax-user" && native != "minimax-agent" && native != "qwen" {
 		return "", fmt.Errorf("invalid native projection %q (use minimax-user, minimax-agent, qwen)", native)
 	}
+	tier := memory.Tier(opts.Tier)
+	if tier == "" {
+		tier = memory.TierCold
+	}
+	if tier != memory.TierHot && tier != memory.TierCold {
+		return "", fmt.Errorf("invalid tier %q (use hot, cold)", opts.Tier)
+	}
 
 	// The corpus is written in English by default. A body in another
 	// language is only right when the user asked for it, or when the entry
@@ -205,42 +242,51 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 			return "already recorded (no change): " + e.Title, nil
 		}
 		e.Body = strings.TrimRight(e.Body, "\n") + "\n\n" + body
+		if opts.Description != "" {
+			e.Description = opts.Description
+		}
+		if opts.Reason != "" {
+			e.Reason = opts.Reason
+		}
+		if opts.Tier != "" {
+			e.Tier = tier
+		}
 		if err := a.Vault.Update(ctx, e); err != nil {
 			return "", err
 		}
 		if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s (append)", scope, e.Title, source)); err != nil {
 			return "", err
 		}
+		if _, err := a.Index(ctx); err != nil {
+			return "", err
+		}
 		return "appended to: " + e.Path, nil
 	}
 
-	tier := memory.Tier(opts.Tier)
-	if tier == "" {
-		tier = memory.TierCold
-	}
 	entry := memory.Entry{
-		Title:      opts.Title,
-		Type:       scope,
-		Date:       time.Now().Format("2006-01-02"),
-		Source:     source,
-		Native:     native,
-		NativeType: scope.NativeType(),
-		Tier:       tier,
-		Keywords:   opts.Tags,
-		Body:       body,
+		Title:       opts.Title,
+		Type:        scope,
+		Date:        time.Now().Format("2006-01-02"),
+		Source:      source,
+		Native:      native,
+		NativeType:  scope.NativeType(),
+		Tier:        tier,
+		Description: opts.Description,
+		Reason:      opts.Reason,
+		Keywords:    opts.Tags,
+		Body:        body,
 	}
 	stored, err := a.Vault.Create(ctx, entry)
 	if err != nil {
 		return "", err
 	}
-	corpus = append(corpus, stored)
-	if _, err := a.Reconciler().Export(ctx, corpus); err != nil {
-		return "", err
-	}
 	if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s", scope, stored.Title, source)); err != nil {
 		return "", err
 	}
-	return "recorded: " + stored.Path + "\nrun `smart-agents-memory index` to refresh the index", nil
+	if _, err := a.Index(ctx); err != nil {
+		return "", err
+	}
+	return "recorded: " + stored.Path, nil
 }
 
 // Log returns the write log, newest first.

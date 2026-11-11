@@ -1,7 +1,7 @@
 // Package vault defines the storage gateway of Smart Agents Memory.
 //
 // The corpus lives behind a port. An adapter is a gateway: Obsidian (the
-// default), a plain local directory, SQLite, Notion. The domain never learns
+// default), a plain local directory, or SQLite. The domain never learns
 // which one is in use, and a new one is a package plus one registration
 // line.
 package vault
@@ -41,6 +41,24 @@ type Vault interface {
 	AppendLog(ctx context.Context, line string) error
 	// LogLines returns the lines of the write log, newest first.
 	LogLines(ctx context.Context, limit int) ([]string, error)
+	// Ready reports whether the store exists and can be read. A missing
+	// store is not a failure of Open: install creates it.
+	Ready(ctx context.Context) error
+}
+
+// Layout is implemented by gateways that can create their store. It is
+// optional: install calls it when the gateway has a layout to materialize.
+type Layout interface {
+	// Ensure creates the store if it is missing. It is idempotent.
+	Ensure(ctx context.Context) error
+}
+
+// Diagnostics is implemented by gateways that can tell a missing note from
+// a note that could not be read. A note without frontmatter is not an
+// entry, and it is not a problem.
+type Diagnostics interface {
+	// Problems lists the notes that could not be read.
+	Problems(ctx context.Context) ([]string, error)
 }
 
 // ProjectNotes is implemented by gateways that keep one note per project.
@@ -103,11 +121,6 @@ type Config struct {
 	MemoryHome string `json:"memory_home,omitempty"`
 	// SQLitePath is the database file of the SQLite gateway.
 	SQLitePath string `json:"sqlite_path,omitempty"`
-	// NotionToken identifies the Notion account. It is never written to
-	// the configuration file: the token belongs in the environment.
-	NotionToken string `json:"-"`
-	// NotionDatabase identifies the Notion database.
-	NotionDatabase string `json:"notion_database,omitempty"`
 	// ProjectionRoot is where the native projections are materialized.
 	ProjectionRoot string `json:"projection_root,omitempty"`
 }
@@ -135,6 +148,9 @@ func Open(cfg Config) (Vault, error) {
 	if name == "" {
 		name = DefaultBackend
 	}
+	if name == removedNotion {
+		return nil, fmt.Errorf("the notion gateway was removed in 0.2.0 because it was not verified against the Notion API")
+	}
 	factory, ok := registry[name]
 	if !ok {
 		known := strings.Join(Names(), ", ")
@@ -145,3 +161,8 @@ func Open(cfg Config) (Vault, error) {
 	}
 	return factory(cfg)
 }
+
+// removedNotion is the backend name of the gateway that left in 0.2.0.
+// The configuration of an existing install may still name it, and the
+// error has to say why it is gone.
+const removedNotion = "notion"

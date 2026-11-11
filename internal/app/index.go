@@ -43,13 +43,29 @@ func (a *App) Index(ctx context.Context) (IndexReport, error) {
 	if err != nil {
 		return report, err
 	}
-	report.Entries = len(corpus)
 
 	reconciler := a.Reconciler()
 	imported, updated, err := reconciler.Import(ctx, corpus)
 	if err != nil {
 		return report, err
 	}
+	// Import writes through the vault. The slice it was given does not
+	// grow with those writes, so the export reads the corpus again.
+	corpus, err = a.Vault.Entries(ctx)
+	if err != nil {
+		return report, err
+	}
+	hotAdded, hotUpdated, err := reconciler.ReconcileHot(ctx, a.HotPath(), corpus)
+	if err != nil {
+		return report, err
+	}
+	imported += hotAdded
+	updated += hotUpdated
+	corpus, err = a.Vault.Entries(ctx)
+	if err != nil {
+		return report, err
+	}
+	report.Entries = len(corpus)
 	report.Imported = imported
 	report.Updated = updated
 
@@ -58,10 +74,6 @@ func (a *App) Index(ctx context.Context) (IndexReport, error) {
 		return report, err
 	}
 	report.Exported = exported
-
-	if err := reconciler.SyncProfile(a.HotContent()); err != nil {
-		return report, err
-	}
 
 	// Everything the native stores hold is now a projection of the corpus:
 	// the next import must not read it back as news.

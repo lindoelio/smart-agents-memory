@@ -55,6 +55,64 @@ func (s *Store) Kind() string { return s.opts.Kind }
 // Root is where the store lives.
 func (s *Store) Root() string { return s.root }
 
+// Ready reports whether the store directory exists.
+func (s *Store) Ready(_ context.Context) error {
+	info, err := os.Stat(s.root)
+	if err != nil || !info.IsDir() {
+		return fmt.Errorf("no memory store at %s — run `smart-agents-memory install` to create one", s.root)
+	}
+	return nil
+}
+
+// Ensure creates the folders of a file store. It does not write entries.
+func (s *Store) Ensure(_ context.Context) error {
+	for _, dir := range []string{
+		filepath.Join(s.CorpusDir(), string(memory.TypeUser)),
+		filepath.Join(s.CorpusDir(), string(memory.TypeLesson)),
+		filepath.Join(s.CorpusDir(), string(memory.TypeProject)),
+		filepath.Join(s.CorpusDir(), string(memory.TypeReference)),
+		filepath.Join(s.root, "projects"),
+		s.LogDir(),
+	} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Problems lists the notes that could not be read. A note without
+// frontmatter is not an entry, and it is not reported here.
+func (s *Store) Problems(_ context.Context) ([]string, error) {
+	var problems []string
+	err := filepath.WalkDir(s.root, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			problems = append(problems, s.rel(path)+": "+err.Error())
+			return nil
+		}
+		if d.IsDir() {
+			if skipDir(d.Name()) && path != s.root {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		if !strings.HasSuffix(d.Name(), ".md") {
+			return nil
+		}
+		f, err := os.Open(path)
+		if err != nil {
+			problems = append(problems, s.rel(path)+": "+err.Error())
+			return nil
+		}
+		f.Close()
+		return nil
+	})
+	if err != nil && !os.IsNotExist(err) {
+		return problems, err
+	}
+	return problems, nil
+}
+
 // CorpusDir is the folder where new entries are written.
 func (s *Store) CorpusDir() string { return filepath.Join(s.root, "corpus") }
 

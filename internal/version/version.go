@@ -5,10 +5,10 @@
 package version
 
 // Version is the current release of Smart Agents Memory.
-const Version = "0.1.1"
+const Version = "0.2.0"
 
 // Name is the product name, used in help output and user-facing messages.
 const Name = "smart-agents-memory"
 
-// UserAgent is sent by outbound HTTP clients (the Notion gateway).
+// UserAgent identifies the product.
 const UserAgent = Name + "/" + Version

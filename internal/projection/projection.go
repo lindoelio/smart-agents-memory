@@ -59,6 +59,20 @@ func (s *Store) Write(target native.Target, rel, content string) error {
 	return os.WriteFile(path, []byte(content), 0o644)
 }
 
+// WriteIfChanged stores the file when its bytes differ. An unchanged file
+// keeps its modification time, so the next import does not read the
+// projection back as a newer edit.
+func (s *Store) WriteIfChanged(target native.Target, rel, content string) (bool, error) {
+	existing, err := s.Read(target, rel)
+	if err == nil && existing == content {
+		return false, nil
+	}
+	if err := s.Write(target, rel, content); err != nil {
+		return false, err
+	}
+	return true, nil
+}
+
 // Exists reports whether a file of a target is there.
 func (s *Store) Exists(target native.Target, rel string) bool {
 	_, err := os.Stat(filepath.Join(s.TargetDir(target), rel))

@@ -78,8 +78,7 @@ The file lives in `~/.config/smart-agents-memory/config.json`.
 ## Moving to another gateway
 
 The corpus travels. The `obsidian` and `disk` gateways read the same notes;
-the `sqlite` and `notion` gateways carry the same entries in a different
-shape.
+the `sqlite` gateway carries the same entries in a database.
 
 ```bash
 smart-agents-memory --vault sqlite --database ~/memory.db add \
@@ -97,3 +96,15 @@ small script that reads the entries of the other product and writes them
 with `smart-agents-memory add` is enough.
 
 The entry format is described in [MEMORY_FORMAT.md](MEMORY_FORMAT.md).
+
+## From 0.1 to 0.2
+
+Two things leave, and the hot tier changes shape.
+
+- A configuration with `"vault": "notion"` fails with an explicit error.
+  The gateway was not verified against the Notion API, so it is not part of
+  the product. Move the corpus to `obsidian`, `disk` or `sqlite` first.
+- `~/.minimax/memories` is no longer linked. Nothing was written there.
+- The first `index` rewrites the inside of the hot markers from the `hot`
+  entries. A block with no `###` headings is imported once as `Profile`.
+  The frontmatter of `MEMORY.md`, including `alwaysApply: true`, stays.

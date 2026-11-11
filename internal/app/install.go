@@ -9,10 +9,10 @@ import (
 
 	"github.com/lindoelio/smart-agents-memory/internal/config"
 	"github.com/lindoelio/smart-agents-memory/internal/link"
-	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/native"
 	"github.com/lindoelio/smart-agents-memory/internal/projection"
 	"github.com/lindoelio/smart-agents-memory/internal/skill"
+	"github.com/lindoelio/smart-agents-memory/internal/vault"
 )
 
 // LinkTarget is one symlink the install command creates.
@@ -50,7 +50,6 @@ func (a *App) LinkTargets() []LinkTarget {
 	targets := []LinkTarget{
 		{"MiniMax Code (user)", filepath.Join(home, ".minimax", "memory"), filepath.Join(nativeRoot, string(native.TargetMiniMaxUser)), true},
 		{"MiniMax Code (agent)", filepath.Join(home, ".minimax", "agents", "main", "memory"), filepath.Join(nativeRoot, string(native.TargetMiniMaxAgent)), true},
-		{"MiniMax Code (store)", filepath.Join(home, ".minimax", "memories"), filepath.Join(nativeRoot, string(native.TargetMiniMaxStore)), true},
 		{"Qwen Code (memories)", filepath.Join(home, ".qwen", "memories"), filepath.Join(nativeRoot, string(native.TargetQwen)), true},
 
 		{"OpenCode", filepath.Join(home, ".config", "opencode", "AGENTS.md"), hot, false},
@@ -73,24 +72,21 @@ func (a *App) LinkTargets() []LinkTarget {
 }
 
 // ensureStore creates the store when it is not there.
-func (a *App) ensureStore() error {
-	root := a.LocalRoot
-	if root == "" {
-		root = config.DefaultStorePath()
-		a.LocalRoot = root
-		a.Projections = projection.New(root)
+//
+// The corpus layout belongs to the gateway. The hot tier file is local,
+// because every tool reads it from disk, whichever gateway holds the corpus.
+func (a *App) ensureStore(ctx context.Context) error {
+	if a.LocalRoot == "" {
+		a.LocalRoot = config.DefaultStorePath()
+		a.Projections = projection.New(a.LocalRoot)
 	}
-	for _, dir := range []string{
-		filepath.Join(root, "corpus", string(memory.TypeUser)),
-		filepath.Join(root, "corpus", string(memory.TypeLesson)),
-		filepath.Join(root, "corpus", string(memory.TypeProject)),
-		filepath.Join(root, "corpus", string(memory.TypeReference)),
-		filepath.Join(root, "projects"),
-		filepath.Join(root, "log"),
-	} {
-		if err := os.MkdirAll(dir, 0o755); err != nil {
+	if layout, ok := a.Vault.(vault.Layout); ok {
+		if err := layout.Ensure(ctx); err != nil {
 			return err
 		}
+	}
+	if err := os.MkdirAll(a.LocalRoot, 0o755); err != nil {
+		return err
 	}
 	if _, err := os.Stat(a.HotPath()); os.IsNotExist(err) {
 		hot := "---\n" +
@@ -136,10 +132,10 @@ type InstallResult struct {
 // wired up in one command.
 func (a *App) Install(ctx context.Context) (InstallResult, error) {
 	result := InstallResult{}
-	if err := a.ensureStore(); err != nil {
+	if err := a.ensureStore(ctx); err != nil {
 		return result, err
 	}
-	result.Store = a.LocalRoot
+	result.Store = a.Vault.Root()
 	if err := a.Projections.EnsureDirs(); err != nil {
 		return result, err
 	}
@@ -176,7 +172,6 @@ func (a *App) Install(ctx context.Context) (InstallResult, error) {
 				Vault:          a.Cfg.Backend,
 				MemoryHome:     a.Cfg.MemoryHome,
 				SQLitePath:     a.Cfg.SQLitePath,
-				NotionDatabase: a.Cfg.NotionDatabase,
 				ProjectionRoot: a.Cfg.ProjectionRoot,
 			}
 			if err := config.Save(a.ConfigPath, file); err == nil {

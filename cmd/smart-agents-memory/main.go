@@ -13,7 +13,6 @@ import (
 	// The gateways are registered by their packages. An adapter is one
 	// package plus one registration line.
 	_ "github.com/lindoelio/smart-agents-memory/internal/vault/disk"
-	_ "github.com/lindoelio/smart-agents-memory/internal/vault/notion"
 	_ "github.com/lindoelio/smart-agents-memory/internal/vault/obsidian"
 	_ "github.com/lindoelio/smart-agents-memory/internal/vault/sqlite"
 )

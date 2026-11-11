@@ -117,12 +117,10 @@ func build(opts config.Options, out, errOut io.Writer) (*app.App, error) {
 // not wipe what the first one found.
 func registerGlobals(fs *flag.FlagSet, opts *config.Options) {
 	fs.BoolVar(&showVersion, "version", false, "print the version and exit")
-	fs.StringVar(&opts.Vault, "vault", opts.Vault, "storage gateway: obsidian (default), disk, sqlite, notion")
+	fs.StringVar(&opts.Vault, "vault", opts.Vault, "storage gateway: obsidian (default), disk, sqlite")
 	fs.StringVar(&opts.MemoryHome, "memory-home", opts.MemoryHome, "root of the store")
 	fs.StringVar(&opts.ConfigPath, "config", opts.ConfigPath, "configuration file")
 	fs.StringVar(&opts.Database, "database", opts.Database, "database of the sqlite gateway")
-	fs.StringVar(&opts.NotionToken, "notion-token", opts.NotionToken, "token of the notion gateway")
-	fs.StringVar(&opts.NotionDatabase, "notion-database", opts.NotionDatabase, "database id of the notion gateway")
 }
 
 // newFlagSet builds a flag set for a command, with the global flags too.
@@ -164,7 +162,7 @@ func cmdSearch(ctx context.Context, opts config.Options, args []string, out, err
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if err := a.RequireStore(); err != nil {
+	if err := a.RequireStore(ctx); err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
@@ -215,7 +213,7 @@ func cmdBrief(ctx context.Context, opts config.Options, args []string, out, errO
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if err := a.RequireStore(); err != nil {
+	if err := a.RequireStore(ctx); err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
@@ -242,6 +240,9 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 	source := fs.String("source", "", "where the entry came from")
 	native := fs.String("native", "", "minimax-user, minimax-agent or qwen")
 	tags := fs.String("tags", "", "comma separated keywords")
+	tier := fs.String("tier", "cold", "hot or cold")
+	description := fs.String("description", "", "the one line a runtime injects")
+	reason := fs.String("reason", "", "why the entry was recorded")
 	force := fs.Bool("force", false, "write even when the title already exists")
 	allow := fs.Bool("allow-other-language", false, "skip the English-default warning")
 	if err := fs.Parse(args); err != nil {
@@ -256,7 +257,7 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if err := a.RequireStore(); err != nil {
+	if err := a.RequireStore(ctx); err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
@@ -266,6 +267,9 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 		Body:               *body,
 		Source:             *source,
 		Native:             *native,
+		Tier:               *tier,
+		Description:        *description,
+		Reason:             *reason,
 		Tags:               splitTags(*tags),
 		Force:              *force,
 		AllowOtherLanguage: *allow,
@@ -312,7 +316,7 @@ func cmdIndex(ctx context.Context, opts config.Options, args []string, out, errO
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if err := a.RequireStore(); err != nil {
+	if err := a.RequireStore(ctx); err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
@@ -478,18 +482,15 @@ Commands:
 
 Global flags:
   --version                print the version and exit
-  --vault <name>           storage gateway: obsidian (default), disk, sqlite, notion
+  --vault <name>           storage gateway: obsidian (default), disk, sqlite
   --memory-home <path>     root of the store
   --config <path>          configuration file
   --database <path>        database of the sqlite gateway
-  --notion-token <token>   token of the notion gateway
-  --notion-database <id>   database id of the notion gateway
 
 Environment:
   %s          root of the store
   %s      backend
   %s   source recorded on new entries
-  %s   token of the notion gateway
 
 Examples:
   %s search "neon"
@@ -497,6 +498,6 @@ Examples:
   %s add --scope lesson --title "Short title" --body "Rule... Why..."
   %s install
 `, version.Name, version.Name,
-		config.EnvHome, config.EnvVault, config.EnvSource, config.EnvNotionToken,
+		config.EnvHome, config.EnvVault, config.EnvSource,
 		version.Name, version.Name, version.Name, version.Name)
 }

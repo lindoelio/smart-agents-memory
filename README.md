@@ -77,14 +77,14 @@ smart-agents-memory --memory-home ~/Documents/MyVault/Smart\ Agents\ Memory inst
 ```
 
 The store is a folder of Markdown notes. Put it inside your Obsidian vault
-if you want to read and edit the memory by hand; point it at a SQLite
-database, or at a Notion database, if you prefer those.
+if you want to read and edit the memory by hand, or point it at a SQLite
+database if you prefer a single file.
 
 ## Use it
 
 ```bash
 smart-agents-memory search "neon"           # find something
-smart-agents-memory brief                   # the profile and the rules
+smart-agents-memory brief                   # the hot tier and the index
 smart-agents-memory brief --project my-app  # + the notes of a project
 smart-agents-memory add --scope lesson \
   --title "Short title" \
@@ -107,11 +107,9 @@ The store is a **gateway**, and you choose it:
 | `obsidian` | **The default.** Notes in an Obsidian vault, with properties, tags and wikilinks. The index is an Obsidian-native note. |
 | `disk` | A plain directory of Markdown notes, for people who do not use Obsidian. |
 | `sqlite` | One database file, for a memory that travels with the machine. |
-| `notion` | A Notion database, for a memory that lives where the rest of the notes live. |
 
 ```bash
 smart-agents-memory --vault sqlite search "neon"
-smart-agents-memory --vault notion brief
 ```
 
 The choice is configuration, not a fork:
@@ -170,8 +168,7 @@ internal/app              use cases: search, brief, add, index, install…
         │
 internal/vault            the port ──┬── obsidian   (default)
         │                             ├── disk
-        │                             ├── sqlite
-        │                             └── notion
+        │                             └── sqlite
 internal/memory           the domain: entries, types, tiers, slugs
 internal/native           the projection formats of each tool
 ```
@@ -189,8 +186,7 @@ go vet ./...
 ```
 
 The suite covers the domain, every gateway, the round trip between them, the
-use cases and the command line. The Notion gateway is tested against a fake
-API, so the suite needs no token and no network.
+use cases and the command line. It needs no token and no network.
 
 ## Documentation
 

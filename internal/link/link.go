@@ -35,11 +35,9 @@ func Link(target, source string, dir bool) (string, error) {
 				return "", err
 			}
 		} else {
-			backup := target + BackupSuffix
-			if _, err := os.Stat(backup); err == nil {
-				if err := os.Remove(backup); err != nil {
-					return "", err
-				}
+			backup, err := backupPath(target)
+			if err != nil {
+				return "", err
 			}
 			if err := os.Rename(target, backup); err != nil {
 				return "", fmt.Errorf("cannot move %s aside: %w", target, err)
@@ -77,4 +75,20 @@ func Check(target, source string) (ok bool, reason string) {
 		return false, "points to the wrong place: " + target + " -> " + dest + " (expected " + source + ")"
 	}
 	return true, ""
+}
+
+// backupPath picks a name that does not exist yet. An earlier backup is
+// kept: the installation never deletes a file the user had.
+func backupPath(target string) (string, error) {
+	base := target + BackupSuffix
+	if _, err := os.Stat(base); os.IsNotExist(err) {
+		return base, nil
+	}
+	for n := 2; n < 1000; n++ {
+		candidate := fmt.Sprintf("%s-%d", base, n)
+		if _, err := os.Stat(candidate); os.IsNotExist(err) {
+			return candidate, nil
+		}
+	}
+	return "", fmt.Errorf("cannot find a free backup name for %s", target)
 }

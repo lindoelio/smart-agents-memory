@@ -8,12 +8,10 @@ local projections.
 | Flag | Meaning |
 |---|---|
 | `--version` | Print the version and exit. It needs no store and no configuration |
-| `--vault <name>` | Backend: `obsidian` (default), `disk`, `sqlite`, `notion` |
+| `--vault <name>` | Backend: `obsidian` (default), `disk`, `sqlite` |
 | `--memory-home <path>` | Root of the store, for the file gateways |
 | `--config <path>` | Configuration file (default `~/.config/smart-agents-memory/config.json`) |
 | `--database <path>` | Database of the SQLite gateway |
-| `--notion-token <token>` | Token of the Notion gateway |
-| `--notion-database <id>` | Database id of the Notion gateway |
 
 ## Commands
 
@@ -25,9 +23,9 @@ otherwise. Output is `path:line: text`.
 
 ### `brief [--project <slug>] [--query Q] [--limit N]`
 
-Prints the hot tier — the profile and the permanent rules — followed by the
-notes of a project when `--project` is given. With `--query` it also runs the
-search.
+Prints the hot tier and the index of the corpus (type, title, description),
+without the bodies. `--project` adds the notes of a project. A gateway that
+does not keep project notes says so. With `--query` it also runs the search.
 
 ### `add --scope <type> --title <title> --body <body>`
 
@@ -37,9 +35,12 @@ Records one durable memory.
 |---|---|
 | `--scope` | `user`, `lesson` (default), `project`, `reference` |
 | `--title` | The title, which is the identity of the entry |
-| `--body` | The content, always with the why |
+| `--body` | The content. The why lives here; an empty body is rejected |
 | `--source` | Where the entry came from (default `smart-agents-memory-cli`) |
 | `--native` | `minimax-user`, `minimax-agent`, `qwen` — where to project it |
+| `--tier` | `hot` or `cold` (default `cold`). `hot` enters every session |
+| `--description` | The one line a runtime injects for a cold entry |
+| `--reason` | Why the entry was recorded, stored beside the body |
 | `--tags` | Keywords, written to the frontmatter |
 | `--force` | Write even when the title already exists |
 | `--allow-other-language` | Skip the English-default warning |
@@ -86,4 +87,3 @@ Prints the version.
 | `SMART_AGENTS_MEMORY_VAULT` | Backend |
 | `SMART_AGENTS_MEMORY_DATABASE` | Database of the SQLite gateway |
 | `SMART_AGENTS_MEMORY_SOURCE` | Source recorded on new entries |
-| `NOTION_TOKEN` | Token of the Notion gateway |

@@ -6,10 +6,12 @@
 package native
 
 import (
-	"net/url"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 )
@@ -22,14 +24,15 @@ const (
 	TargetMiniMaxUser Target = "minimax-user"
 	// TargetMiniMaxAgent is the MiniMax Code agent store.
 	TargetMiniMaxAgent Target = "minimax-agent"
-	// TargetMiniMaxStore is the newer MiniMax store.
-	TargetMiniMaxStore Target = "minimax-store"
 	// TargetQwen is the Qwen Code topic store.
 	TargetQwen Target = "qwen"
 )
 
 // Targets lists every supported native projection.
-var Targets = []Target{TargetMiniMaxUser, TargetMiniMaxAgent, TargetMiniMaxStore, TargetQwen}
+//
+// The newer MiniMax store is not here: its format is not known, and a
+// directory nothing writes is not a projection.
+var Targets = []Target{TargetMiniMaxUser, TargetMiniMaxAgent, TargetQwen}
 
 // Valid reports whether t is a known native target.
 func (t Target) Valid() bool {
@@ -100,8 +103,54 @@ func RenderTopic(e memory.Entry) string {
 		desc += "..."
 	}
 	body := strings.TrimSpace(e.Body)
-	return "---\ndescription: " + url.QueryEscape(desc) + "\n---\n\n" +
+	return "---\ndescription: " + yamlScalar(desc) + "\n---\n\n" +
 		TitleMark + e.Title + " -->\n" + body + "\n"
+}
+
+// RenderHot renders the hot tier: every hot entry, as a heading and a body,
+// in type order then title order. The same text is what every harness reads.
+func RenderHot(entries []memory.Entry) string {
+	var hot []memory.Entry
+	for _, e := range entries {
+		if e.EffectiveTier() == memory.TierHot {
+			hot = append(hot, e)
+		}
+	}
+	sort.SliceStable(hot, func(i, j int) bool {
+		ti, tj := typeIndex(hot[i].Type), typeIndex(hot[j].Type)
+		if ti != tj {
+			return ti < tj
+		}
+		return strings.ToLower(hot[i].Title) < strings.ToLower(hot[j].Title)
+	})
+	var b strings.Builder
+	for _, e := range hot {
+		if b.Len() > 0 {
+			b.WriteString("\n")
+		}
+		b.WriteString(strings.TrimRight(RenderUser(e), "\n"))
+		b.WriteString("\n")
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func typeIndex(t memory.Type) int {
+	for i, known := range memory.Types {
+		if t == known {
+			return i
+		}
+	}
+	return len(memory.Types)
+}
+
+// yamlScalar renders one YAML scalar. A space stays a space: the description
+// is injected into the context, and a query escape would show a plus.
+func yamlScalar(s string) string {
+	data, err := yaml.Marshal(s)
+	if err != nil {
+		return strings.TrimSpace(s)
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // RenderQwen renders an entry in the Qwen topic format.
@@ -144,10 +193,23 @@ func ParseAgent(content string) []memory.Entry {
 		title := strings.TrimSpace(dateRe.ReplaceAllString(m[1], ""))
 		body := block[strings.Index(block, "\n")+1:]
 		ntype := "reference"
-		if idx := strings.Index(body, "\nType: "); idx >= 0 {
+		// The type line is the first line RenderAgent writes. A block that
+		// was edited by hand may have it later, after a reason comment.
+		if rest, ok := strings.CutPrefix(body, "Type: "); ok {
+			ntype = strings.TrimSpace(strings.SplitN(rest, "\n", 2)[0])
+			if i := strings.Index(rest, "\n"); i >= 0 {
+				body = rest[i+1:]
+			} else {
+				body = ""
+			}
+		} else if idx := strings.Index(body, "\nType: "); idx >= 0 {
 			rest := body[idx+len("\nType: "):]
 			ntype = strings.TrimSpace(strings.SplitN(rest, "\n", 2)[0])
-			body = body[:idx] + strings.TrimPrefix(rest[strings.Index(rest, "\n"):], "\n")
+			if i := strings.Index(rest, "\n"); i >= 0 {
+				body = body[:idx] + rest[i+1:]
+			} else {
+				body = body[:idx]
+			}
 		}
 		out = append(out, memory.Entry{
 			Title:      title,
@@ -164,14 +226,19 @@ func ParseAgent(content string) []memory.Entry {
 // ParseUser reads the MiniMax user store and returns its entries.
 func ParseUser(content string) []memory.Entry {
 	var out []memory.Entry
+	// RenderUser writes the reason on the line before the heading, so the
+	// splitter leaves it in the previous block.
+	pendingReason := ""
 	for _, block := range SplitBlocks(content) {
 		m := headingRe.FindStringSubmatch(block)
 		if m == nil {
+			pendingReason = reasonComment(block)
 			continue
 		}
 		title := strings.TrimSpace(m[1])
 		body := block[strings.Index(block, "\n")+1:]
-		reason := ""
+		reason := pendingReason
+		pendingReason = ""
 		if strings.HasPrefix(body, "<!-- mem-append-reason: ") {
 			if idx := strings.Index(body, "-->\n"); idx >= 0 {
 				reason = strings.TrimSpace(body[len("<!-- mem-append-reason: "):idx])
@@ -191,6 +258,20 @@ func ParseUser(content string) []memory.Entry {
 	return out
 }
 
+// reasonComment reads a mem-append-reason comment, when the block is one.
+func reasonComment(block string) string {
+	const prefix = "<!-- mem-append-reason: "
+	trimmed := strings.TrimSpace(block)
+	if !strings.HasPrefix(trimmed, prefix) {
+		return ""
+	}
+	rest := strings.TrimPrefix(trimmed, prefix)
+	if idx := strings.Index(rest, "-->"); idx >= 0 {
+		return strings.TrimSpace(rest[:idx])
+	}
+	return ""
+}
+
 // ParseTopic reads a MiniMax topic file and returns its entry.
 func ParseTopic(content, fileName string) (memory.Entry, bool) {
 	head, body, ok := splitFrontmatter(content)
@@ -198,13 +279,11 @@ func ParseTopic(content, fileName string) (memory.Entry, bool) {
 		return memory.Entry{}, false
 	}
 	desc := ""
-	for _, line := range strings.Split(head, "\n") {
-		if k, v, found := strings.Cut(line, ":"); found && strings.TrimSpace(k) == "description" {
-			desc = strings.TrimSpace(v)
+	meta := map[string]any{}
+	if err := yaml.Unmarshal([]byte(head), &meta); err == nil {
+		if raw, ok := meta["description"]; ok {
+			desc = scalar(raw)
 		}
-	}
-	if unescaped, err := url.QueryUnescape(desc); err == nil {
-		desc = unescaped
 	}
 	title := ""
 	if m := titleMark.FindStringSubmatch(body); m != nil {
@@ -218,7 +297,7 @@ func ParseTopic(content, fileName string) (memory.Entry, bool) {
 	}
 	// The marker carries the title for the runtime; it is not part of the
 	// body of the memory.
-	clean := strings.TrimSpace(strings.ReplaceAll(body, titleMark.ReplaceAllString(body, ""), ""))
+	clean := strings.TrimSpace(titleMark.ReplaceAllString(body, ""))
 	return memory.Entry{
 		Title:       title,
 		Type:        memory.TypeLesson,
@@ -320,4 +399,13 @@ func splitFrontmatter(text string) (head, body string, ok bool) {
 		return "", "", false
 	}
 	return text[4 : 4+end], text[4+end+5:], true
+}
+
+func scalar(v any) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	default:
+		return ""
+	}
 }

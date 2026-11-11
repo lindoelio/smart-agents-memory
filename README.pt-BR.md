@@ -75,14 +75,14 @@ smart-agents-memory --memory-home ~/Documents/MeuVault/Smart\ Agents\ Memory ins
 ```
 
 O store é uma pasta de notas Markdown. Coloque dentro do seu vault do
-Obsidian se quiser ler e editar a memória à mão; aponte para um banco
-SQLite, ou para um database do Notion, se preferir esses.
+Obsidian se quiser ler e editar a memória à mão, ou aponte para um banco
+SQLite se preferir um único arquivo.
 
 ## Usar
 
 ```bash
 smart-agents-memory search "neon"           # encontrar algo
-smart-agents-memory brief                   # o perfil e as regras
+smart-agents-memory brief                   # o hot tier e o índice
 smart-agents-memory brief --project meu-app # + as notas de um projeto
 smart-agents-memory add --scope lesson \
   --title "Título curto" \
@@ -105,11 +105,9 @@ O store é um **gateway**, e você escolhe:
 | `obsidian` | **O padrão.** Notas em um vault do Obsidian, com properties, tags e wikilinks. O índice é uma nota nativa do Obsidian. |
 | `disk` | Uma pasta simples de notas Markdown, para quem não usa Obsidian. |
 | `sqlite` | Um arquivo de banco, para uma memória que viaja com a máquina. |
-| `notion` | Um database do Notion, para uma memória que mora junto das outras notas. |
 
 ```bash
 smart-agents-memory --vault sqlite search "neon"
-smart-agents-memory --vault notion brief
 ```
 
 A escolha é configuração, não um fork:
@@ -168,8 +166,7 @@ internal/app              casos de uso: search, brief, add, index, install…
         │
 internal/vault            a porta ───┬── obsidian   (padrão)
         │                             ├── disk
-        │                             ├── sqlite
-        │                             └── notion
+        │                             └── sqlite
 internal/memory           o domínio: entradas, tipos, tiers, slugs
 internal/native           os formatos de projeção de cada tool
 ```
@@ -187,8 +184,7 @@ go vet ./...
 ```
 
 A suíte cobre o domínio, cada gateway, o round trip entre eles, os casos de
-uso e a linha de comando. O gateway do Notion é testado contra uma API
-falsa, então a suíte não precisa de token nem de rede.
+uso e a linha de comando. Não precisa de token nem de rede.
 
 ## Documentação
 

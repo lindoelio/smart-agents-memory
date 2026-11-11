@@ -70,10 +70,17 @@ counter.
 
 | Target | Shape |
 |---|---|
-| `minimax-user` | `### Title`, then the body, inside the injected `user.md` |
-| `minimax-agent` | `### Title (YYYY-MM-DD)`, a `Type:` line, then the body, inside the injected `MEMORY.md` |
-| `minimax-agent`, cold | A topic file: a `description` property, a marker with the title, then the body |
+| `MEMORY.md` | The hot tier. Every `hot` entry, between the markers. The frontmatter is kept |
+| `minimax-user` | The same hot block, inside the injected `user.md` |
+| `minimax-agent`, hot | `### Title (YYYY-MM-DD)`, a `Type:` line, then the body |
+| `minimax-agent`, cold | A topic file: a YAML `description`, a marker with the title, then the body |
 | `qwen` | Properties `name`, `description`, `type`, `category`, then the body |
+
+A topic description is a YAML scalar. A space stays a space.
+
+The first `index` after 0.2.0 imports a hot block that has no `###` headings
+once, as a `user` entry titled `Profile`, and then regenerates the block
+from the hot entries.
 
 The name of a topic file must match `^[a-z0-9][a-z0-9-]{0,63}$`: the runtime
 of MiniMax Code only recognizes a topic it can name. That is why the topic

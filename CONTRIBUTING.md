@@ -11,7 +11,7 @@ cmd/smart-agents-memory   entrypoint: parses the arguments, prints the result
 internal/cli               the command line adapter
 internal/app               the use cases: search, brief, add, index, install…
 internal/vault             the port of the store, and its registry
-internal/vault/*           the gateways: obsidian, disk, sqlite, notion
+internal/vault/*           the gateways: obsidian, disk, sqlite
 internal/memory            the domain: entries, types, tiers, slugs
 internal/native            the projection formats of each tool
 internal/reconcile         the rule that keeps the corpus and the projections in step
@@ -51,8 +51,7 @@ go vet ./...
 gofmt -l .
 ```
 
-The suite needs no token and no network: the Notion gateway is tested
-against a fake API.
+The suite needs no token and no network.
 
 ## A change in the memory format
 

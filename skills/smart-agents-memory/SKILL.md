@@ -71,14 +71,14 @@ your tool and records it in the write log:
 ```bash
 smart-agents-memory add --scope lesson --title "Short title" --body "Rule... Why..."
 smart-agents-memory add --scope project --title "..." --body "..."
-smart-agents-memory add --scope user --title "..." --body "..."
+smart-agents-memory add --scope user --title "..." --body "..." --tier hot
 ```
 
 Scopes: `user` (a fact about the person), `project` (decision/context),
 `lesson` (durable technical lesson), `reference` (external pointer).
 
-**Golden rule: always the why.** An entry without a "why" is not reusable —
-nobody will know when it applies.
+**Golden rule: always the why.** The why is the body. An empty body is
+rejected. The tool does not judge the prose.
 
 Write the body in English.
 
@@ -99,8 +99,9 @@ Every entry has a `tier` in its frontmatter:
 - **`cold`** — the default. Stays in the corpus and is fetched on demand.
   Technical lessons, project context, references.
 
-If a new entry is universally true (a permanent working rule), ask for
-`tier: hot`; otherwise leave it `cold`.
+If a new entry is universally true (a permanent working rule), pass
+`--tier hot`. Otherwise leave it `cold`, which is the default. `hot` is
+written into the block every harness reads.
 
 ## After writing
 

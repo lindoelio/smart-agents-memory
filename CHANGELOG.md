@@ -4,6 +4,43 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-11-11
+
+The corpus is the source the projections follow, and a gateway that could
+not be verified is no longer part of the product.
+
+### Removed
+
+- **The Notion gateway.** It was tested against a stand-in that accepted a
+  call the Notion API does not define. `vault: notion` now fails and names
+  this version. Move the corpus to `obsidian`, `disk` or `sqlite` first.
+- **The empty MiniMax store link.** `~/.minimax/memories` was created and
+  nothing was written there. The format of that store is not known.
+
+### Changed
+
+- **A projection is regenerated.** `index` rewrites every native file from
+  the corpus and deletes a file no entry backs. A file whose bytes already
+  match is left alone, so the next run stays quiet. An append updates the
+  topic.
+- **One hot tier.** Entries with `--tier hot` are what every harness reads,
+  inside the markers of `MEMORY.md`. The frontmatter stays. A block with no
+  headings is imported once as `Profile`.
+- **`brief` prints the hot tier and the index**, without the bodies of cold
+  entries.
+- **SQLite publishes an index, renames, removes and keeps project notes.**
+  `install` then `doctor` is clean, and it does not create a fake `corpus/`
+  directory.
+- **A second install keeps the previous backup.** The new file gets a
+  numeric suffix. Nothing the user had is deleted.
+
+### Added
+
+- **`--tier`, `--description` and `--reason`.** `hot` or `cold`, the line a
+  runtime injects, and the reason stored beside the body.
+- **`doctor` reports a note it could not read.** A note without frontmatter
+  is still not an entry.
+
 ## [0.1.1] — 2026-11-11
 
 The first release worked, but the first run of a new machine did not.
@@ -77,5 +114,6 @@ CLI named `memoria` with a skill called `memoria-compartilhada`.
 - The Python implementation, and the shell launcher that found the store in
   the iCloud vault.
 
+[0.2.0]: https://github.com/lindoelio/smart-agents-memory/releases/tag/v0.2.0
 [0.1.1]: https://github.com/lindoelio/smart-agents-memory/releases/tag/v0.1.1
 [0.1.0]: https://github.com/lindoelio/smart-agents-memory/releases/tag/v0.1.0

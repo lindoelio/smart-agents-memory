@@ -35,19 +35,27 @@ func (a *App) Doctor(ctx context.Context) (DoctorReport, error) {
 		}
 	}
 
-	// The store itself.
-	root := a.LocalRoot
-	if info, err := os.Stat(root); err != nil || !info.IsDir() {
-		report.Problems = append(report.Problems, "missing: "+root)
+	// The store itself. Ready is the gateway's own check: a file store is a
+	// directory, a sqlite store is a database file.
+	var corpus []memory.Entry
+	if err := a.Vault.Ready(ctx); err != nil {
+		report.Problems = append(report.Problems, err.Error())
 	} else {
-		report.Notes = append(report.Notes, "store: "+root)
-	}
-
-	corpus, err := a.Vault.Entries(ctx)
-	if err != nil {
-		report.Problems = append(report.Problems, "cannot read the corpus: "+err.Error())
-	} else {
-		report.Notes = append(report.Notes, fmt.Sprintf("corpus: %d entries", len(corpus)))
+		report.Notes = append(report.Notes, "store: "+a.Vault.Root())
+		entries, err := a.Vault.Entries(ctx)
+		if err != nil {
+			report.Problems = append(report.Problems, "cannot read the corpus: "+err.Error())
+		} else {
+			corpus = entries
+			report.Notes = append(report.Notes, fmt.Sprintf("corpus: %d entries", len(corpus)))
+		}
+		if diag, ok := a.Vault.(vault.Diagnostics); ok {
+			problems, err := diag.Problems(ctx)
+			if err != nil {
+				report.Problems = append(report.Problems, "cannot read the store: "+err.Error())
+			}
+			report.Problems = append(report.Problems, problems...)
+		}
 	}
 
 	// Every entry must have a type and a title.
@@ -99,19 +107,24 @@ func (a *App) Doctor(ctx context.Context) (DoctorReport, error) {
 		report.Problems = append(report.Problems, "content missing (hot tier): "+a.HotPath())
 	}
 
-	// The index must be there and fresh.
-	indexPath := filepath.Join(a.LocalRoot, "corpus", "INDEX.md")
-	if locator, ok := a.Vault.(vault.IndexLocator); ok {
-		indexPath = locator.IndexPath()
-	}
-	if info, err := os.Stat(indexPath); err != nil {
-		report.Problems = append(report.Problems, "no index — run `smart-agents-memory index`")
-	} else {
-		age := time.Since(info.ModTime()).Hours()
-		if age > 24 {
-			report.Notes = append(report.Notes, fmt.Sprintf("index is stale (%.1fh) — run `smart-agents-memory index`", age))
+	// The index is a problem only when this gateway publishes one and the
+	// file is missing. A gateway without an index is not broken.
+	if _, publishes := a.Vault.(vault.IndexWriter); publishes {
+		indexPath := ""
+		if locator, ok := a.Vault.(vault.IndexLocator); ok {
+			indexPath = locator.IndexPath()
+		}
+		if indexPath == "" {
+			report.Problems = append(report.Problems, "the gateway publishes an index but did not say where")
+		} else if info, err := os.Stat(indexPath); err != nil {
+			report.Problems = append(report.Problems, "no index — run `smart-agents-memory index`")
 		} else {
-			report.Notes = append(report.Notes, "index: fresh")
+			age := time.Since(info.ModTime()).Hours()
+			if age > 24 {
+				report.Notes = append(report.Notes, fmt.Sprintf("index is stale (%.1fh) — run `smart-agents-memory index`", age))
+			} else {
+				report.Notes = append(report.Notes, "index: fresh")
+			}
 		}
 	}
 

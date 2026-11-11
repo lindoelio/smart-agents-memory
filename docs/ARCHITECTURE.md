@@ -70,17 +70,21 @@ type Vault interface {
     Search(ctx context.Context, query string, limit int) ([]Hit, error)
     AppendLog(ctx context.Context, line string) error
     LogLines(ctx context.Context, limit int) ([]string, error)
+    Ready(ctx context.Context) error
 }
 ```
 
-Six methods: the minimum the use cases need. Three optional interfaces add
-what only some gateways have:
+`Ready` is how a use case asks whether the store exists. It does not look
+for a `corpus/` directory, and it does not branch on the gateway name.
+Optional interfaces add what a gateway can do beyond the port:
 
 | Interface | For | Implemented by |
 |---|---|---|
-| `ProjectNotes` | The notes of a project | obsidian, disk |
-| `IndexWriter` | Publishing the index | obsidian, disk |
-| `Renamer` / `Remover` | Moving and deleting an entry | obsidian, disk |
+| `Layout` | Creating the store | obsidian, disk, sqlite |
+| `ProjectNotes` | The notes of a project | obsidian, disk, sqlite |
+| `IndexWriter` | Publishing the index | obsidian, disk, sqlite |
+| `Renamer` / `Remover` | Moving and deleting an entry | obsidian, disk, sqlite |
+| `Diagnostics` | Notes that could not be read | obsidian, disk |
 
 A gateway that does not implement one simply does not have that feature,
 and the use case checks for it.
@@ -99,13 +103,18 @@ never merged: it is regenerated.
 **The tie.** When the corpus and a native store hold the same title with
 different bodies, **the most recent change wins**. The modification time is
 part of the entry, and every gateway supplies it: the file modification time
-on disk, an `updated_at` column in SQLite, the `last_edited_time` of a
-Notion page. Without this rule, a manual edit of the corpus would be
-reverted by an older projection.
+on disk, an `updated_at` column in SQLite. A projection has to be strictly
+newer. The same second keeps the corpus, so a write that just landed is not
+replaced by the projection it is about to regenerate.
 
-**Orphans.** The export only creates. A projection that no entry backs
-would be injected by the runtime without a counterpart, so the `migrate`
-command removes them and the `doctor` reports them.
+**Orphans.** Export rewrites every projection from the corpus and deletes a
+file no entry backs. `doctor` reports a topic that is not valid for the
+runtime. `migrate` still removes the orphans of a legacy store.
+
+**The hot tier.** `MEMORY.md` is a projection of the entries whose tier is
+`hot`. Only the text between the markers is rewritten; the frontmatter
+stays, because Cursor requires `alwaysApply: true`. A freeform block, with
+no `###` headings, is imported once as a `user` entry titled `Profile`.
 
 ## Where the projections live
 
@@ -116,7 +125,7 @@ local disk.
 | Gateway | Root of the projections |
 |---|---|
 | `obsidian`, `disk` | `<store>/native/` — the store is a local folder |
-| `sqlite`, `notion` | `~/.local/share/smart-agents-memory/native/` |
+| `sqlite` | `~/.local/share/smart-agents-memory/native/` |
 
 The hot tier, `MEMORY.md`, follows the same rule: it sits at the root of the
 store, or in the share directory when the store is not local.

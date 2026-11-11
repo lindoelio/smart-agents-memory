@@ -28,8 +28,6 @@ const (
 	EnvSource = "SMART_AGENTS_MEMORY_SOURCE"
 	// EnvDatabase overrides the SQLite database path.
 	EnvDatabase = "SMART_AGENTS_MEMORY_DATABASE"
-	// EnvNotionToken overrides the Notion token.
-	EnvNotionToken = "NOTION_TOKEN"
 )
 
 // DefaultPath is where the configuration file lives.
@@ -51,17 +49,12 @@ func DefaultProjectionRoot() string {
 
 // File is the configuration file of the product.
 type File struct {
-	// Vault is the backend: obsidian (default), disk, sqlite, notion.
+	// Vault is the backend: obsidian (default), disk, sqlite.
 	Vault string `json:"vault,omitempty"`
 	// MemoryHome is the root of the store, for the file gateways.
 	MemoryHome string `json:"memory_home,omitempty"`
 	// SQLitePath is the database of the SQLite gateway.
 	SQLitePath string `json:"sqlite_path,omitempty"`
-	// NotionTokenEnv names the environment variable holding the token.
-	// The token itself never goes into the file.
-	NotionTokenEnv string `json:"notion_token_env,omitempty"`
-	// NotionDatabase is the database id of the Notion gateway.
-	NotionDatabase string `json:"notion_database,omitempty"`
 	// ProjectionRoot is where the native projections are materialized,
 	// for the gateways that are not a local directory.
 	ProjectionRoot string `json:"projection_root,omitempty"`
@@ -105,10 +98,6 @@ type Options struct {
 	MemoryHome string
 	// Database overrides the SQLite database.
 	Database string
-	// NotionToken overrides the Notion token.
-	NotionToken string
-	// NotionDatabase overrides the Notion database id.
-	NotionDatabase string
 }
 
 // Resolve produces the configuration of the run and the path of the file it
@@ -124,12 +113,14 @@ func Resolve(opts Options) (vault.Config, string, error) {
 	}
 
 	backend := firstNonEmpty(opts.Vault, os.Getenv(EnvVault), file.Vault, vault.DefaultBackend)
+	if backend == "notion" {
+		return vault.Config{}, path, fmt.Errorf("the notion gateway was removed in 0.2.0 because it was not verified against the Notion API")
+	}
 
 	cfg := vault.Config{
 		Backend:        backend,
 		MemoryHome:     file.MemoryHome,
 		SQLitePath:     file.SQLitePath,
-		NotionDatabase: file.NotionDatabase,
 		ProjectionRoot: file.ProjectionRoot,
 	}
 
@@ -151,25 +142,14 @@ func Resolve(opts Options) (vault.Config, string, error) {
 		cfg.ProjectionRoot = Expand(cfg.ProjectionRoot)
 	}
 
-	token := opts.NotionToken
-	if token == "" && file.NotionTokenEnv != "" {
-		token = os.Getenv(file.NotionTokenEnv)
-	}
-	if token == "" {
-		token = os.Getenv(EnvNotionToken)
-	}
-	cfg.NotionToken = token
-
-	if db := firstNonEmpty(opts.NotionDatabase, file.NotionDatabase); db != "" {
-		cfg.NotionDatabase = db
-	}
-
 	if backend == "obsidian" || backend == "disk" {
 		if cfg.MemoryHome == "" {
 			// A store that was not found is not an error: the install
 			// command creates one, and the other commands report it.
 			if home, err := DiscoverMemoryHome(); err == nil {
 				cfg.MemoryHome = home
+			} else {
+				cfg.MemoryHome = DefaultStorePath()
 			}
 		}
 	}

@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
@@ -35,7 +36,7 @@ func newHarness(t *testing.T, backend string) *harness {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	cfg := vault.Config{Backend: backend, MemoryHome: root}
+	cfg := vault.Config{Backend: backend, MemoryHome: root, ProjectionRoot: root}
 	if backend == "sqlite" {
 		cfg.SQLitePath = filepath.Join(root, "memory.db")
 	}
@@ -320,12 +321,17 @@ func TestInstallCreatesTheLinks(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cannot install: %v", err)
 	}
-	if len(result.Lines) < 19 {
-		t.Fatalf("the install reported %d lines, want the 18 links and the skill", len(result.Lines))
+	if len(result.Lines) < 18 {
+		t.Fatalf("the install reported %d lines, want the 17 links and the skill", len(result.Lines))
 	}
 	targets := h.app.LinkTargets()
-	if len(targets) != 18 {
-		t.Fatalf("there are %d link targets, want 18", len(targets))
+	if len(targets) != 17 {
+		t.Fatalf("there are %d link targets, want 17", len(targets))
+	}
+	for _, target := range targets {
+		if strings.Contains(target.Path, "memories") && strings.Contains(target.Path, ".minimax") {
+			t.Fatalf("the empty minimax store is still linked: %s", target.Path)
+		}
 	}
 	for _, target := range targets {
 		info, err := os.Lstat(target.Path)
@@ -587,3 +593,288 @@ func TestInstallCreatesAWholeStore(t *testing.T) {
 		t.Fatalf("the doctor found problems: %v", report.Problems)
 	}
 }
+
+func TestAProjectionFollowsTheCorpus(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A durable lesson",
+		Description: "Kept as words",
+		Body:        "The first rule. Why it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	topic := filepath.Join(h.root, "native", "minimax-agent", "topics", "a-durable-lesson.md")
+	data, err := os.ReadFile(topic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "A+durable") {
+		t.Fatalf("the description was query-escaped:\n%s", data)
+	}
+	parsed, ok := native.ParseTopic(string(data), "a-durable-lesson.md")
+	if !ok {
+		t.Fatalf("the topic does not parse:\n%s", data)
+	}
+	if parsed.Description != "Kept as words" {
+		t.Fatalf("the description is %q", parsed.Description)
+	}
+	if strings.Contains(parsed.Body, "smart-agents-memory:title") {
+		t.Fatalf("the title marker leaked into the body: %q", parsed.Body)
+	}
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A durable lesson",
+		Body: "The second rule. Why the first one was incomplete.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(topic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "The second rule.") {
+		t.Fatalf("the append did not reach the topic:\n%s", data)
+	}
+
+	note := filepath.Join(h.root, "corpus", "lesson", "a-durable-lesson.md")
+	body, err := os.ReadFile(note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	updated := strings.Replace(string(body), "The first rule. Why it matters.", "The edited rule. Why a projection must follow the corpus.", 1)
+	if err := os.WriteFile(note, []byte(updated), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	data, err = os.ReadFile(topic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "The edited rule.") {
+		t.Fatalf("the corpus edit did not reach the topic:\n%s", data)
+	}
+	second, err := h.app.Index(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Imported != 0 || second.Updated != 0 || second.Exported != 0 {
+		t.Fatalf("the second run had work to do: %+v", second)
+	}
+}
+
+func TestANewerTopicUpdatesTheCorpusAndKeepsItsType(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "user", Title: "A preference", Tier: "cold",
+		Body: "The first body. Why it was recorded.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	topic := filepath.Join(h.root, "native", "minimax-agent", "topics", "a-preference.md")
+	data, err := os.ReadFile(topic)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "The first body. Why it was recorded.", "The topic was edited. Why the corpus should follow.", 1)
+	if err := os.WriteFile(topic, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(topic, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the corpus has %d entries", len(entries))
+	}
+	if entries[0].Type != memory.TypeUser {
+		t.Fatalf("the type became %q", entries[0].Type)
+	}
+	if entries[0].Native != "minimax-user" {
+		t.Fatalf("the native target became %q", entries[0].Native)
+	}
+	if !strings.Contains(entries[0].Body, "The topic was edited.") {
+		t.Fatalf("the body is %q", entries[0].Body)
+	}
+}
+
+func TestIndexRemovesAnOrphanTopic(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A durable lesson", Body: "The rule. Why it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	orphan := filepath.Join(h.root, "native", "minimax-agent", "topics", "not-an-entry.md")
+	if err := os.WriteFile(orphan, []byte("this is not a topic\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(orphan); !os.IsNotExist(err) {
+		t.Fatal("the orphan topic is still there")
+	}
+}
+
+func TestHotTierComesFromTheCorpus(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	hot := "---\ndescription: Hot tier\ntype: index\nalwaysApply: true\n---\n\n" +
+		native.HotProfileStart + "\nThe person writes in English because the models read it.\n" + native.HotProfileEnd + "\n"
+	if err := os.WriteFile(filepath.Join(h.root, "MEMORY.md"), []byte(hot), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "user", Title: "Identity", Tier: "hot", Body: "The person.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if countTitle(t, h, "Profile") != 1 {
+		t.Fatal("the freeform hot block was not imported once")
+	}
+	second, err := h.app.Index(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second.Imported != 0 || second.Updated != 0 || second.Exported != 0 {
+		t.Fatalf("the second run had work to do: %+v", second)
+	}
+	if countTitle(t, h, "Profile") != 1 {
+		t.Fatal("the second run created another Profile")
+	}
+	data, err := os.ReadFile(filepath.Join(h.root, "MEMORY.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "### Identity") || !strings.Contains(string(data), native.HotProfileStart) {
+		t.Fatalf("the hot tier was not regenerated:\n%s", data)
+	}
+	user, err := os.ReadFile(filepath.Join(h.root, "native", "minimax-user", "user.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(user), "### Identity") || !strings.Contains(string(user), native.HotProfileStart) {
+		t.Fatalf("the user store does not carry the hot tier:\n%s", user)
+	}
+}
+
+func TestBriefListsTheCorpus(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A durable lesson", Description: "Kept as words",
+		Body: "The rule. Why it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, err := h.app.Brief(ctx, "", "", 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "## Index") || !strings.Contains(text, "A durable lesson") || !strings.Contains(text, "Kept as words") {
+		t.Fatalf("the brief is missing the index:\n%s", text)
+	}
+	if strings.Contains(text, "The rule. Why it matters.") {
+		t.Fatalf("the brief dumped a cold body:\n%s", text)
+	}
+}
+
+func TestAGatewayWithoutProjectNotesSaysSo(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	h.app.Vault = bareVault{}
+	_, err := h.app.Brief(context.Background(), "my-app", "", 20)
+	if err == nil || !strings.Contains(err.Error(), "does not keep project notes") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestSQLiteInstallSatisfiesTheDoctor(t *testing.T) {
+	h := newHarness(t, "sqlite")
+	ctx := context.Background()
+	if _, err := h.app.Install(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "corpus")); err == nil {
+		t.Fatal("sqlite created a corpus directory")
+	}
+	report, err := h.app.Doctor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !report.OK() {
+		t.Fatalf("the doctor found problems: %v", report.Problems)
+	}
+}
+
+func TestAnUnreadableNoteIsReported(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Install(ctx); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(h.root, "corpus", "lesson", "locked.md")
+	if err := os.WriteFile(note, []byte("---\ntitle: \"Locked\"\ntype: lesson\n---\n\nBody.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(note, 0); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(note, 0o644) })
+	report, err := h.app.Doctor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, problem := range report.Problems {
+		if strings.Contains(problem, "locked.md") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the unreadable note was not reported: %v", report.Problems)
+	}
+}
+
+func countTitle(t *testing.T, h *harness, title string) int {
+	t.Helper()
+	entries, err := h.app.Vault.Entries(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, e := range entries {
+		if memory.NormTitle(e.Title) == memory.NormTitle(title) {
+			n++
+		}
+	}
+	return n
+}
+
+// bareVault is a gateway with no project notes, so brief can say so.
+type bareVault struct{}
+
+func (bareVault) Kind() string                                    { return "bare" }
+func (bareVault) Root() string                                    { return "bare" }
+func (bareVault) Entries(context.Context) ([]memory.Entry, error) { return nil, nil }
+func (bareVault) Create(context.Context, memory.Entry) (memory.Entry, error) {
+	return memory.Entry{}, nil
+}
+func (bareVault) Update(context.Context, memory.Entry) error { return nil }
+func (bareVault) Search(context.Context, string, int) ([]vault.Hit, error) {
+	return nil, nil
+}
+func (bareVault) AppendLog(context.Context, string) error         { return nil }
+func (bareVault) LogLines(context.Context, int) ([]string, error) { return nil, nil }
+func (bareVault) Ready(context.Context) error                     { return nil }

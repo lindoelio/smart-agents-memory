@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/native"
@@ -64,12 +65,19 @@ func (r *Reconciler) Import(ctx context.Context, corpus []memory.Entry) (int, in
 		if memory.NormBody(candidate.Body) == memory.NormBody(current.Body) {
 			continue
 		}
-		if !current.ModTime.IsZero() && !candidate.ModTime.IsZero() && current.ModTime.After(candidate.ModTime) {
-			// The corpus was edited more recently: it wins, and the
-			// projection is regenerated on export.
+		if candidate.ModTime.IsZero() || (!current.ModTime.IsZero() && !candidate.ModTime.After(current.ModTime)) {
+			// The corpus is newer, or the two share a second. It wins,
+			// and the projection is regenerated on export. A projection
+			// has to be strictly newer to replace the corpus.
 			continue
 		}
+		// The projection parser invents a type and a native target. An
+		// entry the corpus already has keeps both: a user note projected
+		// as a topic must not come back as a lesson.
 		current.Body = candidate.Body
+		if candidate.Description != "" {
+			current.Description = candidate.Description
+		}
 		if candidate.Date != "" {
 			current.Date = candidate.Date
 		}
@@ -79,9 +87,6 @@ func (r *Reconciler) Import(ctx context.Context, corpus []memory.Entry) (int, in
 		if candidate.NativeFile != "" {
 			current.NativeFile = candidate.NativeFile
 		}
-		current.Source = candidate.Source
-		current.Native = candidate.Native
-		current.NativeType = candidate.NativeType
 		if err := r.Vault.Update(ctx, current); err != nil {
 			return added, updated, fmt.Errorf("cannot update %q: %w", current.Title, err)
 		}
@@ -91,79 +96,37 @@ func (r *Reconciler) Import(ctx context.Context, corpus []memory.Entry) (int, in
 	return added, updated, nil
 }
 
+// ProfileTitle is the entry a freeform hot block becomes, once.
+const ProfileTitle = "Profile"
+
 // Export projects the corpus into the native stores.
 //
-// It only creates: a projection is never merged, it is regenerated. An
-// orphan projection is removed by the migrate command and reported by the
-// doctor.
-func (r *Reconciler) Export(ctx context.Context, corpus []memory.Entry) (int, error) {
-	added := 0
+// A projection is regenerated. A file whose bytes already match is left
+// alone, so its modification time does not look like a newer edit. A
+// projection no entry backs is removed.
+func (r *Reconciler) Export(_ context.Context, corpus []memory.Entry) (int, error) {
+	changed := 0
+	hot := native.RenderHot(corpus)
 
-	// MiniMax agent: hot entries live in the injected MEMORY.md.
-	agentPath := "MEMORY.md"
-	agentContent, _ := r.Projections.Read(native.TargetMiniMaxAgent, agentPath)
-	have := native.AgentTitles(agentContent)
-	var chunks []string
-	for _, e := range corpus {
-		if e.Native != string(native.TargetMiniMaxAgent) || e.EffectiveTier() != memory.TierHot {
-			continue
-		}
-		key := memory.NormTitle(e.Title)
-		if have[key] {
-			continue
-		}
-		have[key] = true
-		chunks = append(chunks, native.RenderAgent(e))
+	agent := renderAgent(corpus)
+	wrote, err := r.Projections.WriteIfChanged(native.TargetMiniMaxAgent, "MEMORY.md", agent)
+	if err != nil {
+		return changed, err
 	}
-	if len(chunks) > 0 {
-		prefix := ""
-		if strings.TrimSpace(agentContent) != "" {
-			prefix = strings.TrimRight(agentContent, "\n") + "\n\n"
-		}
-		if err := r.Projections.Write(native.TargetMiniMaxAgent, agentPath, prefix+strings.Join(chunks, "\n")); err != nil {
-			return added, err
-		}
-		added += len(chunks)
+	if wrote {
+		changed++
 	}
 
-	// Cold entries that the runtime wrote straight into the injected store
-	// become topic files, so they stop growing the context of every session.
-	if err := r.evictCold(native.TargetMiniMaxAgent, agentPath, corpus); err != nil {
-		return added, err
+	user := renderUserFile(hot, corpus)
+	wrote, err = r.Projections.WriteIfChanged(native.TargetMiniMaxUser, "user.md", user)
+	if err != nil {
+		return changed, err
+	}
+	if wrote {
+		changed++
 	}
 
-	// MiniMax user: hot entries live in the injected user.md.
-	userPath := "user.md"
-	userContent, _ := r.Projections.Read(native.TargetMiniMaxUser, userPath)
-	haveUser := native.UserTitles(userContent)
-	var userChunks []string
-	for _, e := range corpus {
-		if e.Native != string(native.TargetMiniMaxUser) || e.EffectiveTier() != memory.TierHot {
-			continue
-		}
-		key := memory.NormTitle(e.Title)
-		if haveUser[key] {
-			continue
-		}
-		haveUser[key] = true
-		userChunks = append(userChunks, native.RenderUser(e))
-	}
-	if len(userChunks) > 0 {
-		prefix := ""
-		if strings.TrimSpace(userContent) != "" {
-			prefix = strings.TrimRight(userContent, "\n") + "\n\n"
-		}
-		if err := r.Projections.Write(native.TargetMiniMaxUser, userPath, prefix+strings.Join(userChunks, "\n")); err != nil {
-			return added, err
-		}
-		added += len(userChunks)
-	}
-	if err := r.evictCold(native.TargetMiniMaxUser, userPath, corpus); err != nil {
-		return added, err
-	}
-
-	// Cold entries become topic files: only the name and the description
-	// enter the context, the body is read on demand.
+	wantedTopics := map[string]bool{}
 	for _, e := range corpus {
 		if e.EffectiveTier() == memory.TierHot {
 			continue
@@ -172,16 +135,22 @@ func (r *Reconciler) Export(ctx context.Context, corpus []memory.Entry) (int, er
 			continue
 		}
 		rel := "topics/" + memory.ASCIISlug(e.Title) + ".md"
-		if r.Projections.Exists(native.TargetMiniMaxAgent, rel) {
-			continue
+		wantedTopics[rel] = true
+		wrote, err := r.Projections.WriteIfChanged(native.TargetMiniMaxAgent, rel, native.RenderTopic(e))
+		if err != nil {
+			return changed, err
 		}
-		if err := r.Projections.Write(native.TargetMiniMaxAgent, rel, native.RenderTopic(e)); err != nil {
-			return added, err
+		if wrote {
+			changed++
 		}
-		added++
 	}
+	removed, err := r.removeAbsent(native.TargetMiniMaxAgent, "topics", wantedTopics, false)
+	if err != nil {
+		return changed, err
+	}
+	changed += removed
 
-	// Qwen: one file per entry, plus an index.
+	wantedQwen := map[string]bool{"MEMORY.md": true}
 	var indexLines []string
 	for _, e := range corpus {
 		if e.Native != string(native.TargetQwen) {
@@ -191,11 +160,13 @@ func (r *Reconciler) Export(ctx context.Context, corpus []memory.Entry) (int, er
 		if name == "" {
 			name = memory.Slugify(e.Title) + ".md"
 		}
-		if !r.Projections.Exists(native.TargetQwen, name) {
-			if err := r.Projections.Write(native.TargetQwen, name, native.RenderQwen(e)); err != nil {
-				return added, err
-			}
-			added++
+		wantedQwen[name] = true
+		wrote, err := r.Projections.WriteIfChanged(native.TargetQwen, name, native.RenderQwen(e))
+		if err != nil {
+			return changed, err
+		}
+		if wrote {
+			changed++
 		}
 		desc := e.Description
 		if desc == "" {
@@ -203,104 +174,217 @@ func (r *Reconciler) Export(ctx context.Context, corpus []memory.Entry) (int, er
 		}
 		indexLines = append(indexLines, fmt.Sprintf("- [%s](%s) — %s", e.Title, name, desc))
 	}
+	qwenIndex := ""
 	if len(indexLines) > 0 {
-		existing, _ := r.Projections.Read(native.TargetQwen, "MEMORY.md")
-		var lines []string
-		for _, l := range strings.Split(existing, "\n") {
-			if strings.TrimSpace(l) != "" {
-				lines = append(lines, l)
-			}
-		}
-		seen := map[string]bool{}
-		for _, l := range lines {
-			if m := mdLink.FindStringSubmatch(l); m != nil {
-				seen[m[1]] = true
-			}
-		}
-		for _, line := range indexLines {
-			m := mdLink.FindStringSubmatch(line)
-			if m != nil {
-				if seen[m[1]] {
-					continue
-				}
-				seen[m[1]] = true
-			}
-			lines = append(lines, line)
-		}
-		if err := r.Projections.Write(native.TargetQwen, "MEMORY.md", strings.Join(lines, "\n")+"\n"); err != nil {
-			return added, err
-		}
+		qwenIndex = strings.Join(indexLines, "\n") + "\n"
 	}
-
-	return added, nil
-}
-
-// SyncProfile keeps the hot tier block of the MiniMax user store in step
-// with the hot tier of the corpus.
-func (r *Reconciler) SyncProfile(hot string) error {
-	if hot == "" {
-		return nil
-	}
-	content, err := r.Projections.Read(native.TargetMiniMaxUser, "user.md")
+	wrote, err = r.Projections.WriteIfChanged(native.TargetQwen, "MEMORY.md", qwenIndex)
 	if err != nil {
-		return nil
+		return changed, err
 	}
-	block := ""
-	if m := profileBlock.FindStringSubmatch(hot); m != nil {
-		block = strings.TrimSpace(m[1])
+	if wrote {
+		changed++
 	}
-	var updated string
-	if strings.Contains(content, native.HotProfileStart) {
-		updated = profileBlock.ReplaceAllString(content,
-			native.HotProfileStart+"\n"+block+"\n"+native.HotProfileEnd)
-	} else {
-		updated = native.HotProfileStart + "\n" + block + "\n" + native.HotProfileEnd + "\n\n" + strings.TrimLeft(content, "\n")
+	removed, err = r.removeAbsent(native.TargetQwen, "", wantedQwen, true)
+	if err != nil {
+		return changed, err
 	}
-	if updated == content {
-		return nil
-	}
-	return r.Projections.Write(native.TargetMiniMaxUser, "user.md", updated)
+	changed += removed
+	return changed, nil
 }
 
-// evictCold removes cold entries from an injected store.
-func (r *Reconciler) evictCold(target native.Target, rel string, corpus []memory.Entry) error {
-	content, err := r.Projections.Read(target, rel)
-	if err != nil || content == "" {
-		return nil
+// ReconcileHot makes the hot tier file a projection of the hot entries.
+//
+// A freeform block, with no headings, is imported once as Profile. A block
+// edited after the last projection is imported when it is newer than the
+// corpus. The frontmatter of the file is kept.
+func (r *Reconciler) ReconcileHot(ctx context.Context, hotPath string, corpus []memory.Entry) (int, int, error) {
+	content, err := os.ReadFile(hotPath)
+	if err != nil && !os.IsNotExist(err) {
+		return 0, 0, err
 	}
-	cold := map[string]bool{}
-	for _, e := range corpus {
-		if e.Native == string(target) && e.EffectiveTier() != memory.TierHot {
-			cold[memory.NormTitle(e.Title)] = true
+	text := string(content)
+	interior := hotInterior(text)
+	canonical := native.RenderHot(corpus)
+	added, updated := 0, 0
+
+	info, statErr := os.Stat(hotPath)
+	edited := statErr == nil && (r.Projections.LastProjection().IsZero() || info.ModTime().After(r.Projections.LastProjection()))
+	if edited && memory.NormBody(interior) != memory.NormBody(canonical) && strings.TrimSpace(interior) != "" {
+		fileMod := info.ModTime()
+		added, updated, err = r.importHot(ctx, interior, fileMod, corpus)
+		if err != nil {
+			return added, updated, err
+		}
+		corpus, err = r.Vault.Entries(ctx)
+		if err != nil {
+			return added, updated, err
+		}
+		canonical = native.RenderHot(corpus)
+	}
+
+	next := applyHotBlock(text, canonical)
+	if next != text {
+		if err := os.MkdirAll(filepath.Dir(hotPath), 0o755); err != nil {
+			return added, updated, err
+		}
+		if err := os.WriteFile(hotPath, []byte(next), 0o644); err != nil {
+			return added, updated, err
 		}
 	}
-	if len(cold) == 0 {
-		return nil
+	return added, updated, nil
+}
+
+// importHot brings a hand-edited hot block into the corpus.
+func (r *Reconciler) importHot(ctx context.Context, interior string, fileMod time.Time, corpus []memory.Entry) (int, int, error) {
+	parsed := native.ParseUser(interior)
+	if len(parsed) == 0 {
+		if hotBodyKnown(corpus, interior) {
+			return 0, 0, nil
+		}
+		n, u, err := r.upsertHot(ctx, corpus, ProfileTitle, strings.TrimSpace(interior), "", fileMod)
+		return n, u, err
 	}
-	var kept []string
-	dropped := false
-	for _, block := range native.SplitBlocks(content) {
-		if strings.TrimSpace(block) == "" {
+	added, updated := 0, 0
+	for _, e := range parsed {
+		n, u, err := r.upsertHot(ctx, corpus, e.Title, e.Body, e.Reason, fileMod)
+		if err != nil {
+			return added, updated, err
+		}
+		added += n
+		updated += u
+		if n+u > 0 {
+			var err error
+			corpus, err = r.Vault.Entries(ctx)
+			if err != nil {
+				return added, updated, err
+			}
+		}
+	}
+	return added, updated, nil
+}
+
+// upsertHot creates or updates one hot entry. The corpus wins when it is
+// newer than the file.
+func (r *Reconciler) upsertHot(ctx context.Context, corpus []memory.Entry, title, body, reason string, fileMod time.Time) (int, int, error) {
+	key := memory.NormTitle(title)
+	for _, current := range corpus {
+		if memory.NormTitle(current.Title) != key {
 			continue
 		}
-		m := regexp.MustCompile(`(?m)^### (.*)$`).FindStringSubmatch(block)
-		if m != nil {
-			title := strings.TrimSpace(regexp.MustCompile(`\s*\(\d{4}-\d{2}-\d{2}\)\s*$`).ReplaceAllString(m[1], ""))
-			if cold[memory.NormTitle(title)] {
-				dropped = true
-				continue
-			}
+		if !current.ModTime.IsZero() && !fileMod.After(current.ModTime) {
+			return 0, 0, nil
 		}
-		kept = append(kept, strings.TrimRight(block, "\n"))
+		if memory.NormBody(current.Body) == memory.NormBody(body) && (reason == "" || current.Reason == reason) {
+			return 0, 0, nil
+		}
+		current.Body = body
+		if reason != "" {
+			current.Reason = reason
+		}
+		if current.Tier == "" {
+			current.Tier = memory.TierHot
+		}
+		if err := r.Vault.Update(ctx, current); err != nil {
+			return 0, 0, err
+		}
+		return 0, 1, nil
 	}
-	if !dropped {
-		return nil
+	entry := memory.Entry{
+		Title:      title,
+		Type:       memory.TypeUser,
+		Date:       time.Now().Format("2006-01-02"),
+		Body:       body,
+		Tier:       memory.TierHot,
+		Source:     memory.DefaultSource,
+		Native:     string(native.TargetMiniMaxUser),
+		NativeType: "user",
+		Reason:     reason,
 	}
-	out := strings.Join(kept, "\n\n")
-	if out != "" {
-		out += "\n"
+	if _, err := r.Vault.Create(ctx, entry); err != nil {
+		return 0, 0, err
 	}
-	return r.Projections.Write(target, rel, out)
+	return 1, 0, nil
+}
+
+func hotBodyKnown(corpus []memory.Entry, body string) bool {
+	want := memory.NormBody(body)
+	for _, e := range corpus {
+		if e.EffectiveTier() == memory.TierHot && memory.NormBody(e.Body) == want {
+			return true
+		}
+	}
+	return false
+}
+
+func renderAgent(corpus []memory.Entry) string {
+	var chunks []string
+	for _, e := range corpus {
+		if e.Native == string(native.TargetMiniMaxAgent) && e.EffectiveTier() == memory.TierHot {
+			chunks = append(chunks, strings.TrimRight(native.RenderAgent(e), "\n"))
+		}
+	}
+	if len(chunks) == 0 {
+		return ""
+	}
+	return strings.Join(chunks, "\n\n") + "\n"
+}
+
+// renderUserFile is the MiniMax user store: the hot block every harness
+// shares, then the headings of the hot entries that target this store.
+// The block already carries those headings, so they are not repeated.
+func renderUserFile(hot string, _ []memory.Entry) string {
+	return applyHotBlock("", hot)
+}
+
+func hotInterior(content string) string {
+	m := profileBlock.FindStringSubmatch(content)
+	if m == nil {
+		return ""
+	}
+	return strings.TrimSpace(m[1])
+}
+
+func applyHotBlock(content, block string) string {
+	inner := native.HotProfileStart + "\n"
+	if strings.TrimSpace(block) != "" {
+		inner += strings.TrimSpace(block) + "\n"
+	}
+	inner += native.HotProfileEnd
+	if loc := profileBlock.FindStringIndex(content); loc != nil {
+		// Splice the bytes. ReplaceAllString would treat $ in a body as a backreference.
+		return content[:loc[0]] + inner + content[loc[1]:]
+	}
+	if strings.TrimSpace(content) == "" {
+		return "---\n" +
+			"description: Shared memory — the profile and the permanent rules. Read before working.\n" +
+			"type: index\n" +
+			"alwaysApply: true\n" +
+			"---\n\n" + inner + "\n"
+	}
+	return strings.TrimRight(content, "\n") + "\n\n" + inner + "\n"
+}
+
+// removeAbsent deletes projection files that the corpus no longer names.
+func (r *Reconciler) removeAbsent(target native.Target, sub string, keep map[string]bool, rootOnly bool) (int, error) {
+	files, err := r.Projections.List(target, sub)
+	if err != nil {
+		return 0, err
+	}
+	removed := 0
+	for _, rel := range files {
+		if keep[rel] {
+			continue
+		}
+		if rootOnly && strings.Contains(rel, "/") {
+			continue
+		}
+		if err := r.Projections.Delete(target, rel); err != nil {
+			return removed, err
+		}
+		removed++
+	}
+	return removed, nil
 }
 
 // candidates reads every entry the native stores hold.
@@ -390,11 +474,8 @@ func (r *Reconciler) Orphans(corpus []memory.Entry) ([]string, error) {
 	return out, nil
 }
 
-var (
-	mdLink       = regexp.MustCompile(`\(([^)]+\.md)\)`)
-	profileBlock = regexp.MustCompile(
-		regexp.QuoteMeta(native.HotProfileStart) + `(?s)(.*?)` + regexp.QuoteMeta(native.HotProfileEnd))
-)
+var profileBlock = regexp.MustCompile(
+	regexp.QuoteMeta(native.HotProfileStart) + `(?s)(.*?)` + regexp.QuoteMeta(native.HotProfileEnd))
 
 // WriteHot writes the hot tier file of the local store.
 func WriteHot(localRoot, content string) error {

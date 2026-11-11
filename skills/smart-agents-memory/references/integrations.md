@@ -20,9 +20,8 @@ Neither carries heavy content.
 
 | Tool | Link | Receives |
 |---|---|---|
-| MiniMax Code | `~/.minimax/memory/` | The profile, injected in every session |
-| MiniMax Code | `~/.minimax/agents/main/memory/` | The lessons, as topic files |
-| MiniMax Code | `~/.minimax/memories/` | The new runtime store |
+| MiniMax Code | `~/.minimax/memory/` | The hot tier, injected in every session |
+| MiniMax Code | `~/.minimax/agents/main/memory/` | Cold entries as topic files |
 | Qwen Code | `~/.qwen/memories/` | Its topics |
 | OpenCode | `~/.config/opencode/AGENTS.md` | The hot tier |
 | Codex | `~/.codex/AGENTS.md` | The hot tier |

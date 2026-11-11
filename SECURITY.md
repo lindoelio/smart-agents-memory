@@ -28,9 +28,7 @@ here, and it is synthetic.
 
 ## Secrets
 
-- **No secret is ever written to the configuration file.** The token of the
-  Notion gateway comes from the environment — `NOTION_TOKEN`, or the variable
-  named by `notion_token_env` — and is not persisted.
+- **No secret is ever written to the configuration file.**
 - **No secret is ever written to the store.** The write log records what
   changed and where it came from, never a credential.
 - The `add` command warns when the body of an entry does not look like
@@ -42,20 +40,15 @@ here, and it is synthetic.
 The installation replaces files in the home directory of the user with
 symlinks. When a target exists and is not a symlink — a tool rewrote it —
 the previous content is preserved next to it, with the `.bak-smart-agents-memory`
-suffix, before the link is recreated. Nothing is deleted.
+suffix, before the link is recreated. A backup that is already there is
+kept, and the new one gets a numeric suffix. The installation does not
+delete a file the user had.
 
 The store directories are symlinks of a **directory**, and the global
 instruction slots are symlinks of a **file**. The distinction is deliberate:
 the MiniMax runtime writes with a temporary file plus a rename, and a rename
 over a symlink of a file would replace the link and silently disconnect the
 integration.
-
-## The Notion gateway
-
-The Notion gateway talks to the Notion API over HTTPS, with the token in the
-`Authorization` header. It reads and writes only the database it is given.
-The database id and the token come from the configuration and the
-environment; neither is logged.
 
 ## Reporting a vulnerability
 

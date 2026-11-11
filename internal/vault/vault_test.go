@@ -69,6 +69,11 @@ func newBackend(t *testing.T, kind string) vault.Vault {
 	if err != nil {
 		t.Fatalf("cannot open the %s gateway: %v", kind, err)
 	}
+	if layout, ok := store.(vault.Layout); ok {
+		if err := layout.Ensure(context.Background()); err != nil {
+			t.Fatalf("cannot create the %s store: %v", kind, err)
+		}
+	}
 	return store
 }
 

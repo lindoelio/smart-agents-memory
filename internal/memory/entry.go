@@ -86,7 +86,7 @@ type Entry struct {
 	// disagree. Every vault adapter supplies it.
 	ModTime time.Time
 	// Path is the entry's address inside the vault. It is opaque: a file
-	// path on disk, a row id in SQLite, a page id in Notion.
+	// path on disk, or a row id in SQLite.
 	Path string
 }
 

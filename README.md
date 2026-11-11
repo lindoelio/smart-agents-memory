@@ -1,5 +1,7 @@
 # Smart Agents Memory
 
+[![M8ven Score](https://m8ven.ai/badge/mcp/lindoelio-smart-agents-memory-ssdwt7?v=e414dafe65df633b5442e5a9d3c7158a)](https://m8ven.ai/mcp/lindoelio-smart-agents-memory-ssdwt7?s=readme)
+
 Shared memory for AI agents: **one corpus, many harnesses**.
 
 OpenCode, MiniMax Code, Codex, Cursor, Qwen Code, Claude Code and the Gemini

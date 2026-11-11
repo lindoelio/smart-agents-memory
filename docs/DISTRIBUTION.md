@@ -31,8 +31,20 @@ needs no C toolchain and no platform-specific setup.
 ```bash
 # Homebrew
 brew install lindoelio/smart-agents-memory/smart-agents-memory
+```
 
-# A release
+The command works on a machine that never tapped the repository: Homebrew
+clones the public tap, downloads the binary from the public release, and
+verifies its checksum. To tap it by hand and install from the tap:
+
+```bash
+brew tap lindoelio/smart-agents-memory
+brew install smart-agents-memory
+```
+
+From a release:
+
+```bash
 curl -fsSLO https://github.com/lindoelio/smart-agents-memory/releases/latest/download/smart-agents-memory-darwin-arm64
 chmod +x smart-agents-memory-darwin-arm64
 sudo install -m 755 smart-agents-memory-darwin-arm64 /usr/local/bin/smart-agents-memory
@@ -43,6 +55,27 @@ Then wire the tools up:
 ```bash
 smart-agents-memory install
 ```
+
+The command creates the store when there is none, at `~/Smart Agents
+Memory`, and links the tools to it. To use another location:
+
+```bash
+smart-agents-memory --memory-home ~/Documents/MyVault/Smart\ Agents\ Memory install
+```
+
+## Upgrading
+
+```bash
+brew upgrade smart-agents-memory
+```
+
+The formula of the tap points at the release of the version it was
+rewritten for, and the release pipeline rewrites it on every tag. The
+checksum in the formula is the checksum of the published asset, so Homebrew
+refuses to install anything that was tampered with.
+
+A store written by an older version is brought forward by the `migrate`
+command, and the changelog says what changed.
 
 ## The skill
 

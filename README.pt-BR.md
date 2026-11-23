@@ -174,7 +174,7 @@ internal/native           os formatos de projeção de cada tool
 O teste que importa é o round trip: o mesmo corpus passa por todos os
 backends e volta igual.
 
-Veja o [documento de arquitetura](docs/ARCHITECTURE.md).
+Veja o [documento de arquitetura](ARCHITECTURE.md).
 
 ## Desenvolvimento
 
@@ -190,7 +190,7 @@ uso e a linha de comando. Não precisa de token nem de rede.
 
 | Documento | O que tem |
 |---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | O modelo, as portas, a regra de reconciliação |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | O modelo, as portas, a regra de reconciliação |
 | [MEMORY_FORMAT.md](docs/MEMORY_FORMAT.md) | O formato de uma entrada |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | O que cada ferramenta recebe, e por quê |
 | [DISTRIBUTION.md](docs/DISTRIBUTION.md) | Os canais de release, e como publicar um |

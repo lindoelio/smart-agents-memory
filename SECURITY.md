@@ -2,18 +2,22 @@
 
 ## What this project touches
 
-Smart Agents Memory writes to two places: the store, and the home directory
-of the user.
+Smart Agents Memory writes to the store and to a few places in the home
+directory of the user.
 
 | Path | What lives there |
 |---|---|
-| The store | The memory: one note per entry, in Markdown with YAML properties |
+| The store | The memory: one Markdown note per entry, or a row in a SQLite database |
 | `~/.config/smart-agents-memory/` | The configuration file, and no token |
-| `~/.local/share/smart-agents-memory/` | The materialized skill, and the local projections of the gateways that are not a local directory |
-| `~/.minimax/`, `~/.qwen/`, `~/.codex/`, `~/.claude/`, `~/.gemini/`, `~/.config/opencode/`, `~/.cursor/` | The symlinks that connect the tools to the store |
+| `~/.local/share/smart-agents-memory/` | The materialized skill; for SQLite also the hot tier, the projection state and the local projections |
+| `~/.minimax/`, `~/.qwen/`, `~/.codex/`, `~/.claude/`, `~/.gemini/`, `~/.config/opencode/`, `~/.cursor/`, `~/.agents/` | The symlinks that connect the tools to the store |
 
-The tool never reads anything else, and never writes outside the store and
-those directories.
+On the machine, the tool reads the store and the paths above. When no store
+was named for a file gateway, it also looks in the iCloud folders where a
+store may live:
+`~/Library/Mobile Documents/iCloud~md~obsidian/Documents/*/smart-agents-memory`
+and `~/Library/Mobile Documents/com~apple~CloudDocs/*/smart-agents-memory`.
+It never writes outside the store and the paths above.
 
 ## The store is private
 
@@ -28,7 +32,11 @@ here, and it is synthetic.
 
 ## Secrets
 
-- **No secret is ever written to the configuration file.**
+- **No gateway talks to the network.** The product makes no HTTP request,
+  so it holds no token and needs none. The environment variables are paths
+  and names, never credentials.
+- **No secret is ever written to the configuration file.** The file holds
+  the backend and the paths of the store.
 - **No secret is ever written to the store.** The write log records what
   changed and where it came from, never a credential.
 - The `add` command warns when the body of an entry does not look like
@@ -40,9 +48,9 @@ here, and it is synthetic.
 The installation replaces files in the home directory of the user with
 symlinks. When a target exists and is not a symlink — a tool rewrote it —
 the previous content is preserved next to it, with the `.bak-smart-agents-memory`
-suffix, before the link is recreated. A backup that is already there is
-kept, and the new one gets a numeric suffix. The installation does not
-delete a file the user had.
+suffix, before the link is recreated. The content of a file that a tool
+wrote is never deleted: an earlier backup is kept, and the new one gets a
+numeric suffix (`-2`, `-3`, …).
 
 The store directories are symlinks of a **directory**, and the global
 instruction slots are symlinks of a **file**. The distinction is deliberate:

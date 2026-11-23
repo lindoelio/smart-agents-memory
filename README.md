@@ -176,7 +176,7 @@ internal/native           the projection formats of each tool
 The gateway test that matters is the round trip: the same corpus travels
 through every backend and comes back unchanged.
 
-See [the architecture document](docs/ARCHITECTURE.md).
+See [the architecture document](ARCHITECTURE.md).
 
 ## Development
 
@@ -192,7 +192,7 @@ use cases and the command line. It needs no token and no network.
 
 | Document | What is in it |
 |---|---|
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | The model, the ports, the reconciliation rule |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | The model, the ports, the reconciliation rule |
 | [MEMORY_FORMAT.md](docs/MEMORY_FORMAT.md) | The format of an entry |
 | [INTEGRATIONS.md](docs/INTEGRATIONS.md) | What each tool receives, and why |
 | [DISTRIBUTION.md](docs/DISTRIBUTION.md) | The release channels, and how to publish one |

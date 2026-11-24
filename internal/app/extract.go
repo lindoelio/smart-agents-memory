@@ -53,6 +53,7 @@ type ExtractOptions struct {
 // ExtractReport is the outcome of one extraction.
 type ExtractReport struct {
 	Candidates    int
+	Accepted      int
 	Added         int
 	Skipped       []string
 	SkippedReason string
@@ -64,9 +65,10 @@ type ExtractReport struct {
 // rejection is normal and does not stop the run; a failed write is an
 // operational error, and the cursor must not move past it.
 type candidateOutcome struct {
-	Reason string
-	Added  bool
-	Err    error
+	Reason   string
+	Accepted bool
+	Added    bool
+	Err      error
 }
 
 // ExtractCandidate is one durable fact proposed by the model.
@@ -175,6 +177,9 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 		if outcome.Reason != "" {
 			report.Skipped = append(report.Skipped, candidate.Title+": "+outcome.Reason)
 			continue
+		}
+		if outcome.Accepted {
+			report.Accepted++
 		}
 		if outcome.Added {
 			report.Added++
@@ -292,7 +297,7 @@ func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, 
 		category = ""
 	}
 	if opts.DryRun {
-		return candidateOutcome{Added: true}
+		return candidateOutcome{Accepted: true}
 	}
 	message, err := a.Add(ctx, AddOptions{
 		Scope: string(scope), Title: title, Body: body, Source: extractSource,
@@ -305,6 +310,7 @@ func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, 
 		return candidateOutcome{Err: err}
 	}
 	return candidateOutcome{
-		Added: strings.HasPrefix(message, "recorded") || strings.HasPrefix(message, "appended"),
+		Accepted: true,
+		Added:    strings.HasPrefix(message, "recorded") || strings.HasPrefix(message, "appended"),
 	}
 }

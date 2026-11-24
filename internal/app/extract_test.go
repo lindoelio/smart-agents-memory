@@ -144,6 +144,9 @@ func TestExtractRejectsSecrets(t *testing.T) {
 	if report.Added != 0 {
 		t.Fatalf("the secret was added: %+v", report)
 	}
+	if report.Candidates != 1 || report.Accepted != 0 || len(report.Skipped) != 1 {
+		t.Fatalf("the rejected candidate was counted as accepted: %+v", report)
+	}
 	entries, err := h.app.Vault.Entries(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -164,7 +167,7 @@ func TestExtractDryRunDoesNotWriteOrAdvanceTheCursor(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if report.Added != 1 {
+	if report.Candidates != 1 || report.Accepted != 1 || report.Added != 0 {
 		t.Fatalf("the dry run reported %+v", report)
 	}
 	entries, err := h.app.Vault.Entries(ctx)
@@ -406,7 +409,7 @@ func TestExtractStopsOnAWriteFailureAndRetriesWithoutDuplicates(t *testing.T) {
 	if len(report.Skipped) != 0 {
 		t.Fatalf("the write failure was reported as a skip: %+v", report)
 	}
-	if report.Added != 0 {
+	if report.Accepted != 0 || report.Added != 0 {
 		t.Fatalf("the failed candidate was counted: %+v", report)
 	}
 	if _, statErr := os.Stat(filepath.Join(h.root, ".extract-cursor.json")); !os.IsNotExist(statErr) {
@@ -418,7 +421,7 @@ func TestExtractStopsOnAWriteFailureAndRetriesWithoutDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if recovered.Added != 1 || fake.calls != 2 {
+	if recovered.Accepted != 1 || recovered.Added != 1 || fake.calls != 2 {
 		t.Fatalf("the retry did not persist the candidate: %+v calls=%d", recovered, fake.calls)
 	}
 	entries, err := real.Entries(ctx)

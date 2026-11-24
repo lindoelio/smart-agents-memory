@@ -121,6 +121,33 @@ func TestAddPinnedFlag(t *testing.T) {
 	}
 }
 
+func TestExtractDryRunReportsAcceptedAndWritesNothing(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	server := llmServer(t, `{"candidates":[{"scope":"lesson","title":"A dry lesson","body":"The rule. Why it matters."}]}`, &calls)
+	t.Setenv("SMART_AGENTS_MEMORY_LLM_URL", server.URL)
+
+	code, out, errOut := runStdin(t, `{"role":"user","content":"one finished turn"}`,
+		"--vault", "obsidian", "--memory-home", root, "extract", "--stdin", "--dry-run")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, "accepted=1") || strings.Contains(out, "added=") {
+		t.Fatalf("the dry run output is %q", out)
+	}
+	matches, err := filepath.Glob(filepath.Join(root, "corpus", "*", "*.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(matches) != 0 {
+		t.Fatalf("the dry run wrote %v", matches)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".extract-cursor.json")); !os.IsNotExist(err) {
+		t.Fatal("the dry run wrote a cursor")
+	}
+}
+
 func TestInstallHooksMaterializesTheScript(t *testing.T) {
 	root := t.TempDir()
 	home := t.TempDir()

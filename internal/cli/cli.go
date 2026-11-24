@@ -566,6 +566,8 @@ func cmdExtract(ctx context.Context, opts config.Options, args []string, out, er
 	}
 	if report.SkippedReason != "" {
 		fmt.Fprintf(out, "skipped: %s\n", report.SkippedReason)
+	} else if *dryRun {
+		fmt.Fprintf(out, "extracted: candidates=%d accepted=%d (dry run)\n", report.Candidates, report.Accepted)
 	} else {
 		fmt.Fprintf(out, "extracted: candidates=%d added=%d\n", report.Candidates, report.Added)
 	}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -182,6 +183,70 @@ func TestExtractDryRunDoesNotWriteOrAdvanceTheCursor(t *testing.T) {
 	}
 }
 
+func TestExtractOneShotProcessesEveryPayloadAndKeepsNoCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	payload := `{"role":"user","content":"one finished turn"}`
+
+	for i := 1; i <= 2; i++ {
+		report, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, OneShot: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.SkippedReason != "" {
+			t.Fatalf("the payload %d was skipped: %+v", i, report)
+		}
+		if fake.calls != i {
+			t.Fatalf("the payload %d produced %d model calls", i, fake.calls)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(h.root, ".extract-cursor.json")); !os.IsNotExist(err) {
+		t.Fatal("the one-shot run wrote a cursor")
+	}
+}
+
+func TestExtractWithASessionIDKeepsTheCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	payload := `{"role":"user","content":"one finished turn"}`
+
+	if _, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, SessionID: "session"}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
+		t.Fatalf("the session cursor did not survive: %+v calls=%d", second, fake.calls)
+	}
+}
+
+func TestExtractFromATranscriptPathKeepsTheCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, []byte(`{"role":"user","content":"from a file"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Extract(ctx, app.ExtractOptions{TranscriptPath: path}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.app.Extract(ctx, app.ExtractOptions{TranscriptPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
+		t.Fatalf("the file cursor did not survive: %+v calls=%d", second, fake.calls)
+	}
+}
+
 func TestWatchOnceExtractsNewTranscripts(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	ctx := context.Background()
@@ -275,7 +340,7 @@ func TestWatchOnceAcceptsAJSONDocumentWithMessages(t *testing.T) {
 	}
 }
 
-func TestInstallHooksWritesAnExecutableScript(t *testing.T) {
+func TestInstallHooksWritesAnAbsoluteCommandAndReadme(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	path, lines, err := h.app.InstallHooks()
 	if err != nil {
@@ -292,10 +357,45 @@ func TestInstallHooksWritesAnExecutableScript(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	executable, err = filepath.Abs(executable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), executable) {
+		t.Fatalf("the hook script does not carry the absolute binary %q:\n%s", executable, data)
+	}
 	if !strings.Contains(string(data), "extract --stdin --auto-dream --quiet") {
 		t.Fatalf("the hook script is %q", data)
 	}
-	if len(lines) < 3 {
+	if !strings.Contains(string(data), "SMART_AGENTS_MEMORY_SESSION_ID") {
+		t.Fatalf("the hook script does not name the session variable:\n%s", data)
+	}
+	snippet := `{"command":` + strconv.Quote(path) + `}`
+	readmePath := filepath.Join(filepath.Dir(path), "README.md")
+	readme, err := os.ReadFile(readmePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(readme), snippet) {
+		t.Fatalf("the README does not carry the snippet %q:\n%s", snippet, readme)
+	}
+	if !strings.Contains(string(readme), executable) {
+		t.Fatalf("the README does not carry the absolute binary:\n%s", readme)
+	}
+	found := false
+	for _, line := range lines {
+		if strings.Contains(line, `{"command":`) {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the returned lines do not carry a command snippet: %v", lines)
+	}
+	if len(lines) < 4 {
 		t.Fatalf("the hook lines are %v", lines)
 	}
 }
@@ -313,70 +413,6 @@ func TestExtractAutoDreamTriggersAtTheThreshold(t *testing.T) {
 	}
 	if report.Dream == nil {
 		t.Fatalf("auto-dream did not run: %+v", report)
-	}
-}
-
-func TestExtractOneShotProcessesEveryPayloadAndKeepsNoCursor(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	ctx := context.Background()
-	fake := &extractLLM{payload: `{"candidates":[]}`}
-	h.app.LLM = fake
-	payload := `{"role":"user","content":"one finished turn"}`
-
-	for i := 1; i <= 2; i++ {
-		report, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, OneShot: true})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if report.SkippedReason != "" {
-			t.Fatalf("the payload %d was skipped: %+v", i, report)
-		}
-		if fake.calls != i {
-			t.Fatalf("the payload %d produced %d model calls", i, fake.calls)
-		}
-	}
-	if _, err := os.Stat(filepath.Join(h.root, ".extract-cursor.json")); !os.IsNotExist(err) {
-		t.Fatal("the one-shot run wrote a cursor")
-	}
-}
-
-func TestExtractWithASessionIDKeepsTheCursor(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	ctx := context.Background()
-	fake := &extractLLM{payload: `{"candidates":[]}`}
-	h.app.LLM = fake
-	payload := `{"role":"user","content":"one finished turn"}`
-
-	if _, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, SessionID: "session"}); err != nil {
-		t.Fatal(err)
-	}
-	second, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, SessionID: "session"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
-		t.Fatalf("the session cursor did not survive: %+v calls=%d", second, fake.calls)
-	}
-}
-
-func TestExtractFromATranscriptPathKeepsTheCursor(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	ctx := context.Background()
-	fake := &extractLLM{payload: `{"candidates":[]}`}
-	h.app.LLM = fake
-	path := filepath.Join(t.TempDir(), "session.jsonl")
-	if err := os.WriteFile(path, []byte(`{"role":"user","content":"from a file"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := h.app.Extract(ctx, app.ExtractOptions{TranscriptPath: path}); err != nil {
-		t.Fatal(err)
-	}
-	second, err := h.app.Extract(ctx, app.ExtractOptions{TranscriptPath: path})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
-		t.Fatalf("the file cursor did not survive: %+v calls=%d", second, fake.calls)
 	}
 }
 

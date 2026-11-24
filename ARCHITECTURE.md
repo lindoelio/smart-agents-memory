@@ -225,15 +225,27 @@ last run and status.
 `internal/extract` normalizes JSONL, JSON array/object and plain text into
 `Turn{Role, Text}`. A cursor in `.extract-cursor.json` is keyed by session;
 if the transcript shrank because the harness compacted it, the cursor is
-clamped to zero so post-compaction turns are not skipped.
+clamped to zero so post-compaction turns are not skipped. A stdin payload
+without `--session-id` is a one-shot: the cursor is neither read nor
+written, because a post-turn hook sends one finished turn per call.
+
+`Parse` stays permissive for a hook or a manual call, which may send a
+payload this package does not recognize. `ParseStrict` is what `watch` uses:
+a JSON document or JSONL stream without a recognizable turn yields zero
+turns, and plain text is accepted only for `.txt` and `.log`. A configuration
+file in a scanned directory never reaches the model, and a file with no
+conversation does not create a cursor.
 
 `App.Extract` calls the model only when the unprocessed slice has a non-empty
 user turn. Candidates must be durable, English and contain the why; they are
 forced to cold and unpinned, pass the SecretGuard, and cannot overwrite a
-pinned or hot title. The cursor is saved atomically, and `--auto-dream` runs
-Dream when the dirty threshold is reached. `watch` scans the configured
-transcript directories; `install --hooks` writes a post-turn script that
-always exits zero.
+pinned or hot title. A rejected candidate is a skip; a failed write is an
+operational error, so the run stops before the cursor moves and the next run
+retries it. `Add` recognizes a body it already holds, so the retry does not
+duplicate. The report separates `Accepted` from `Added`, and `--auto-dream`
+runs Dream when the dirty threshold is reached. `watch` scans the configured
+transcript directories; `install --hooks` writes a post-turn script with the
+absolute path of the binary, plus a `command` snippet for each harness.
 
 ## Reconciliation
 

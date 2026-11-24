@@ -46,8 +46,26 @@ All notable changes to this project are documented here. The format follows
 - **Post-turn extraction.** `internal/extract` parses JSONL, JSON and plain
   text, keeps a per-session compression-safe cursor, and stores only cold,
   unpinned candidates after the SecretGuard and the why check. `watch` scans
-  transcript directories, and `install --hooks` writes the zero-exit
-  post-turn script for OpenCode, Qwen Code and Claude Code.
+  transcript directories with a strict parser, and `install --hooks` writes
+  the zero-exit post-turn script for OpenCode, Qwen Code and Claude Code.
+
+### Fixed
+
+- **The post-turn hook extracts every turn.** A stdin payload without
+  `--session-id` is a one-shot: it no longer writes the cursor, so the second
+  consecutive payload is not reported as `no_new_user_turns`.
+- **A failed write no longer counts as a skip.** `extract` aborts, exits
+  non-zero and leaves the cursor untouched; the next run retries the
+  candidate, and the corpus still has no duplicate.
+- **`watch` ignores what is not a transcript.** A JSON configuration file, a
+  JSON array without turns and a Markdown note are no longer sent to the
+  model as one user message; a file without a conversation creates no
+  cursor.
+- **`extract --dry-run` reports `accepted`, not `added`.** The count matches
+  what was written: nothing.
+- **The installed hook is actionable.** The script carries the absolute path
+  of the binary and the snippets are real `{"command":...}` blocks; a README
+  documents the wiring the command does not perform.
 
 ## [0.2.0] — 2026-11-11
 

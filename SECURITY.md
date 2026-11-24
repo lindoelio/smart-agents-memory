@@ -54,8 +54,10 @@ here, and it is synthetic.
   reject a symlink that could redirect a write outside the worktree.
 - **Extraction cannot escalate a memory.** `extract` and `watch` force cold,
   unpinned candidates, run the SecretGuard, and refuse a pinned or hot title.
-  The post-turn hook always exits zero, so a failing model never blocks the
-  coding harness.
+  `watch` parses strictly, so a configuration file is never sent to the
+  model as a user turn. A failed write aborts the run before the cursor
+  moves, so the candidate is retried instead of lost. The post-turn hook
+  always exits zero, so a failing model never blocks the coding harness.
 
 ## The symlinks
 

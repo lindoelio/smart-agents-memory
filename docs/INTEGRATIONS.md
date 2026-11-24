@@ -24,11 +24,27 @@ reports that no client is configured.
 
 ## The post-turn hook
 
-`install --hooks` writes `<share>/hooks/post-turn.sh`, which runs
-`extract --stdin --auto-dream --quiet || true`. The `|| true` is deliberate:
-a missing endpoint or a malformed transcript must never block the coding
-harness. The same script is the snippet for OpenCode, Qwen Code and Claude
-Code; each tool only needs to invoke it after a turn.
+`install --hooks` writes `<share>/hooks/post-turn.sh`, which invokes the
+absolute path of the binary with `extract --stdin --auto-dream --quiet` and
+`|| true`. The absolute path matters because the hook runs with the PATH of
+the harness, not the PATH of the shell that installed the memory. The
+`|| true` is deliberate: a missing endpoint or a malformed transcript must
+never block the coding harness.
+
+The command also writes `<share>/hooks/README.md` with the reusable snippet:
+
+```json
+{"command":"/absolute/path/to/post-turn.sh"}
+```
+
+The same snippet works for OpenCode, Qwen Code and Claude Code; each tool
+only needs to invoke it after a turn. The command does not edit the
+configuration of a harness it does not know.
+
+A stdin payload without `--session-id` is one complete turn, so two
+consecutive hook calls are both extracted. When the harness knows the
+session identifier, export `SMART_AGENTS_MEMORY_SESSION_ID`; the script
+then passes it as `--session-id` and extraction resumes from the cursor.
 
 ## The links
 

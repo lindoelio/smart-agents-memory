@@ -105,19 +105,28 @@ and hot entries are never modified.
 ### `extract [--stdin] [--transcript <path>] [--session-id <id>] [--cwd <dir>] [--dry-run] [--auto-dream] [--quiet]`
 
 Extracts durable facts from new user turns. It accepts JSONL, a JSON
-array/object or plain text, keeps a per-session cursor, and forces candidates
-to cold and unpinned. `--auto-dream` consolidates when the dirty threshold is
-reached.
+array/object or plain text and forces candidates to cold and unpinned. A
+stdin payload without `--session-id` is one complete turn: the cursor is
+neither read nor written, so a post-turn hook extracts every call. A file or
+an explicit `--session-id` keeps the per-session cursor. `--dry-run` prints
+`accepted=N` and writes neither the memory nor the cursor. `--auto-dream`
+consolidates when the dirty threshold is reached. A failed write aborts with
+a non-zero exit and leaves the cursor untouched.
 
 ### `watch [--once] [--interval 5m] [--auto-dream]`
 
 Scans the default transcript directories and the `watch_dirs` configuration,
-running `extract` on new files. `--once` scans once and exits.
+running `extract` on new files. The scan is strict: JSON without a
+recognizable conversation is ignored, and plain text is accepted only for
+`.txt` and `.log`. Ignored files create no cursor. `--once` scans once and
+exits.
 
 ### `install [--hooks]`
 
 Links the tools to the store. `--hooks` also materializes
-`<share>/hooks/post-turn.sh` and prints the harness hook snippets.
+`<share>/hooks/post-turn.sh`, which invokes the absolute path of the binary,
+and `<share>/hooks/README.md` with the `{"command":...}` snippet for OpenCode,
+Qwen Code and Claude Code.
 
 ### `mcp`
 

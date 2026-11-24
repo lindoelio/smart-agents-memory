@@ -138,6 +138,9 @@ stores the **name** of the key variable, never the key:
 ```
 
 `watch_dirs` is an optional list of extra transcript directories for `watch`.
+`install --hooks` writes `<share>/hooks/post-turn.sh` with the absolute path
+of the binary and a `command` snippet for OpenCode, Qwen Code and Claude
+Code.
 
 ## Where the memory lives
 
@@ -203,9 +206,12 @@ minimum. See [the integrations reference](skills/smart-agents-memory/references/
 - **A tree, not a dump.** Entries carry a category and usage scenarios.
   `recall --tree` is the compact router; `--query`, `--category` and `--ref`
   fetch only what the task needs.
-- **Extraction is incremental.** `extract`/`watch` only process new user
-  turns, keep a durable cursor, and store candidates as cold, unpinned
-  memories after the SecretGuard and the why check.
+- **Extraction is incremental.** `extract --transcript` and `watch` only
+  process new user turns and keep a durable cursor. A stdin payload without
+  `--session-id` is one complete turn, so a post-turn hook extracts every
+  call. Candidates are stored as cold, unpinned memories after the
+  SecretGuard and the why check; a failed write aborts the run and leaves
+  the cursor untouched.
 
 ## Architecture
 

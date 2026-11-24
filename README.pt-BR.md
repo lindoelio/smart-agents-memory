@@ -136,6 +136,8 @@ OpenAI é usada quando a variável da chave existe. A configuração guarda o
 ```
 
 `watch_dirs` é uma lista opcional de diretórios extras de transcrição para o `watch`.
+`install --hooks` gera `<share>/hooks/post-turn.sh` com o caminho absoluto do
+binário e um snippet `command` para OpenCode, Qwen Code e Claude Code.
 
 ## Onde a memória mora
 
@@ -201,9 +203,12 @@ mínimo. Veja a
 - **Uma árvore, não um dump.** As entradas têm categoria e cenários de uso.
   `recall --tree` é o router compacto; `--query`, `--category` e `--ref`
   buscam só o que a tarefa precisa.
-- **Extração é incremental.** `extract`/`watch` só processam turns novos de
-  `user`, mantêm um cursor durável e salvam candidatos como memórias `cold`
-  e não pinned, depois do SecretGuard e da checagem do porquê.
+- **Extração é incremental.** `extract --transcript` e `watch` só processam
+  turns novos de `user` e mantêm um cursor durável. Um payload de stdin sem
+  `--session-id` é um turno completo, então um hook pós-turno extrai em toda
+  chamada. Candidatos são salvos como memórias `cold` e não pinned, depois
+  do SecretGuard e da checagem do porquê; uma falha de escrita aborta a
+  execução e deixa o cursor intacto.
 
 ## Arquitetura
 

@@ -3,8 +3,12 @@ package cli_test
 import (
 	"bytes"
 	"context"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -649,5 +653,89 @@ func TestTheHelpAnswersWithoutAStore(t *testing.T) {
 	}
 	if !strings.Contains(out, "Usage:") {
 		t.Fatalf("the help is missing: %q", out)
+	}
+}
+
+func runStdin(t *testing.T, stdin string, args ...string) (int, string, string) {
+	t.Helper()
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	original := os.Stdin
+	os.Stdin = reader
+	defer func() {
+		os.Stdin = original
+		reader.Close()
+	}()
+	if _, err := writer.WriteString(stdin); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return run(t, args...)
+}
+
+// llmServer answers every completion with one JSON payload and counts calls.
+
+func llmServer(t *testing.T, payload string, calls *int) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		*calls++
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"choices":[{"message":{"content":%s}}]}`, strconv.Quote(payload))
+	}))
+	t.Cleanup(server.Close)
+	return server
+}
+
+func TestExtractStdinProcessesEveryPayloadWithoutACursor(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	server := llmServer(t, `{"candidates":[]}`, &calls)
+	t.Setenv("SMART_AGENTS_MEMORY_LLM_URL", server.URL)
+	payload := `{"role":"user","content":"one finished turn"}`
+
+	for i := 1; i <= 2; i++ {
+		code, out, errOut := runStdin(t, payload,
+			"--vault", "obsidian", "--memory-home", root, "extract", "--stdin")
+		if code != 0 {
+			t.Fatalf("payload %d: the exit code is %d: %s %s", i, code, out, errOut)
+		}
+		if !strings.Contains(out, "extracted: candidates=0") {
+			t.Fatalf("payload %d: the output is %q", i, out)
+		}
+	}
+	if calls != 2 {
+		t.Fatalf("two payloads produced %d model calls", calls)
+	}
+	if _, err := os.Stat(filepath.Join(root, ".extract-cursor.json")); !os.IsNotExist(err) {
+		t.Fatal("the stdin extraction wrote a cursor")
+	}
+}
+
+func TestExtractStdinWithASessionIDKeepsTheCursor(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	calls := 0
+	server := llmServer(t, `{"candidates":[]}`, &calls)
+	t.Setenv("SMART_AGENTS_MEMORY_LLM_URL", server.URL)
+	payload := `{"role":"user","content":"one finished turn"}`
+
+	if code, out, errOut := runStdin(t, payload,
+		"--vault", "obsidian", "--memory-home", root,
+		"extract", "--stdin", "--session-id", "session"); code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	code, out, errOut := runStdin(t, payload,
+		"--vault", "obsidian", "--memory-home", root,
+		"extract", "--stdin", "--session-id", "session")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	if calls != 1 || !strings.Contains(out, "skipped: no_new_user_turns") {
+		t.Fatalf("the session cursor did not survive: calls=%d output=%q", calls, out)
 	}
 }

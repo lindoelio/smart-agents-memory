@@ -30,6 +30,10 @@ type ExtractOptions struct {
 	TranscriptPath string
 	// SessionID keys the cursor. It defaults to the path or "default".
 	SessionID string
+	// OneShot treats the payload as a complete unit: the cursor is neither
+	// read nor written, so every stdin payload is processed. It is what a
+	// post-turn hook needs, because each call carries one finished turn.
+	OneShot bool
 	// CWD is where a project candidate resolves its scope.
 	CWD string
 	// DryRun reports without writing memories or moving the cursor.
@@ -65,6 +69,16 @@ type ExtractCandidate struct {
 
 func (a *App) extractCursorPath() string { return filepath.Join(a.LocalRoot, extractCursorFile) }
 
+// saveExtractCursor persists the offset unless the run cannot own a cursor:
+// a dry run writes nothing, and a one-shot payload has no session to resume.
+func (a *App) saveExtractCursor(store *extract.CursorStore, sessionID, transcriptPath string, offset int, opts ExtractOptions) error {
+	if opts.DryRun || opts.OneShot {
+		return nil
+	}
+	extract.Advance(store, sessionID, transcriptPath, offset, time.Now())
+	return extract.Save(a.extractCursorPath(), *store)
+}
+
 // Extract parses a transcript, asks the configured model for durable
 // knowledge, and persists only candidates that pass every safety gate.
 func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, error) {
@@ -91,22 +105,23 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 	if err != nil {
 		return report, err
 	}
-	store, err := extract.Load(a.extractCursorPath())
-	if err != nil {
-		return report, err
+	store := extract.CursorStore{Sessions: map[string]extract.SessionCursor{}}
+	start := 0
+	if !opts.OneShot {
+		store, err = extract.Load(a.extractCursorPath())
+		if err != nil {
+			return report, err
+		}
+		start = extract.StartOffset(store, sessionID, turns)
 	}
-	start := extract.StartOffset(store, sessionID, turns)
 	if !extract.HasNewUserTurn(turns, start) {
 		report.SkippedReason = "no_new_user_turns"
 		report.Cursor = extract.SessionCursor{
 			SessionID: sessionID, TranscriptPath: opts.TranscriptPath,
 			ProcessedOffset: len(turns), UpdatedAt: time.Now(),
 		}
-		if !opts.DryRun {
-			extract.Advance(&store, sessionID, opts.TranscriptPath, len(turns), time.Now())
-			if err := extract.Save(a.extractCursorPath(), store); err != nil {
-				return report, err
-			}
+		if err := a.saveExtractCursor(&store, sessionID, opts.TranscriptPath, len(turns), opts); err != nil {
+			return report, err
 		}
 		return report, nil
 	}
@@ -136,11 +151,8 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 		SessionID: sessionID, TranscriptPath: opts.TranscriptPath,
 		ProcessedOffset: len(turns), UpdatedAt: time.Now(),
 	}
-	if !opts.DryRun {
-		extract.Advance(&store, sessionID, opts.TranscriptPath, len(turns), time.Now())
-		if err := extract.Save(a.extractCursorPath(), store); err != nil {
-			return report, err
-		}
+	if err := a.saveExtractCursor(&store, sessionID, opts.TranscriptPath, len(turns), opts); err != nil {
+		return report, err
 	}
 
 	if opts.AutoDream && !opts.DryRun {

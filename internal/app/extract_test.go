@@ -245,3 +245,67 @@ func TestExtractAutoDreamTriggersAtTheThreshold(t *testing.T) {
 		t.Fatalf("auto-dream did not run: %+v", report)
 	}
 }
+
+func TestExtractOneShotProcessesEveryPayloadAndKeepsNoCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	payload := `{"role":"user","content":"one finished turn"}`
+
+	for i := 1; i <= 2; i++ {
+		report, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, OneShot: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if report.SkippedReason != "" {
+			t.Fatalf("the payload %d was skipped: %+v", i, report)
+		}
+		if fake.calls != i {
+			t.Fatalf("the payload %d produced %d model calls", i, fake.calls)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(h.root, ".extract-cursor.json")); !os.IsNotExist(err) {
+		t.Fatal("the one-shot run wrote a cursor")
+	}
+}
+
+func TestExtractWithASessionIDKeepsTheCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	payload := `{"role":"user","content":"one finished turn"}`
+
+	if _, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, SessionID: "session"}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.app.Extract(ctx, app.ExtractOptions{Transcript: payload, SessionID: "session"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
+		t.Fatalf("the session cursor did not survive: %+v calls=%d", second, fake.calls)
+	}
+}
+
+func TestExtractFromATranscriptPathKeepsTheCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	path := filepath.Join(t.TempDir(), "session.jsonl")
+	if err := os.WriteFile(path, []byte(`{"role":"user","content":"from a file"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Extract(ctx, app.ExtractOptions{TranscriptPath: path}); err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.app.Extract(ctx, app.ExtractOptions{TranscriptPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
+		t.Fatalf("the file cursor did not survive: %+v calls=%d", second, fake.calls)
+	}
+}

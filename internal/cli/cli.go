@@ -520,7 +520,8 @@ func cmdExtract(ctx context.Context, opts config.Options, args []string, out, er
 		return 2
 	}
 	content := ""
-	if strings.TrimSpace(*transcript) != "" {
+	fromStdin := strings.TrimSpace(*transcript) == ""
+	if !fromStdin {
 		data, err := os.ReadFile(*transcript)
 		if err != nil {
 			fmt.Fprintln(errOut, "error: "+err.Error())
@@ -548,9 +549,13 @@ func cmdExtract(ctx context.Context, opts config.Options, args []string, out, er
 		fmt.Fprintln(errOut, "error: extraction needs an LLM client")
 		return 1
 	}
+	// One stdin payload is one finished turn. Without a session identifier
+	// there is nothing to resume, and a cursor would hide the next payload.
+	// A file or an explicit --session-id keeps the cursor semantics.
 	report, err := a.Extract(ctx, app.ExtractOptions{
 		Transcript: content, TranscriptPath: *transcript, SessionID: *sessionID,
-		CWD: *cwd, DryRun: *dryRun, AutoDream: *autoDream,
+		OneShot: fromStdin && strings.TrimSpace(*sessionID) == "",
+		CWD:     *cwd, DryRun: *dryRun, AutoDream: *autoDream,
 	})
 	if err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
@@ -605,7 +610,8 @@ func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errO
 			fmt.Fprintln(errOut, "warning: "+warning)
 		}
 		if report.Extracted > 0 || report.Added > 0 {
-			fmt.Fprintf(out, "watch: files=%d candidates=%d added=%d\n", report.Files, report.Extracted, report.Added)
+			fmt.Fprintf(out, "watch: files=%d candidates=%d added=%d\n",
+				report.Files, report.Extracted, report.Added)
 		}
 		return nil
 	}

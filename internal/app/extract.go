@@ -34,6 +34,12 @@ type ExtractOptions struct {
 	// read nor written, so every stdin payload is processed. It is what a
 	// post-turn hook needs, because each call carries one finished turn.
 	OneShot bool
+	// Strict refuses content without a recognizable conversation instead of
+	// treating it as plain text. A directory scan sets it.
+	Strict bool
+	// AllowPlainText lets ParseStrict accept a non-JSON transcript. It is
+	// set for extensions that are textual by definition.
+	AllowPlainText bool
 	// CWD is where a project candidate resolves its scope.
 	CWD string
 	// DryRun reports without writing memories or moving the cursor.
@@ -110,9 +116,19 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 	if sessionID == "" {
 		sessionID = "default"
 	}
-	turns, err := extract.Parse([]byte(content))
+	var turns []extract.Turn
+	var err error
+	if opts.Strict {
+		turns, err = extract.ParseStrict([]byte(content), opts.AllowPlainText)
+	} else {
+		turns, err = extract.Parse([]byte(content))
+	}
 	if err != nil {
 		return report, err
+	}
+	if opts.Strict && len(turns) == 0 {
+		report.SkippedReason = "not_a_transcript"
+		return report, nil
 	}
 	store := extract.CursorStore{Sessions: map[string]extract.SessionCursor{}}
 	start := 0

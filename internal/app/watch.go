@@ -19,6 +19,7 @@ type WatchOptions struct {
 // WatchReport is the outcome of one scan.
 type WatchReport struct {
 	Files     int
+	Ignored   int
 	Extracted int
 	Added     int
 	Errors    []string
@@ -40,7 +41,9 @@ func (a *App) WatchOnce(ctx context.Context, opts WatchOptions) (WatchReport, er
 		}
 		report.Files++
 		result, err := a.Extract(ctx, ExtractOptions{
-			Transcript: string(content), TranscriptPath: file, SessionID: file, AutoDream: opts.AutoDream,
+			Transcript: string(content), TranscriptPath: file, SessionID: file,
+			Strict: true, AllowPlainText: allowsPlainText(filepath.Ext(file)),
+			AutoDream: opts.AutoDream,
 		})
 		if err != nil {
 			if reported[file] == "" {
@@ -49,10 +52,26 @@ func (a *App) WatchOnce(ctx context.Context, opts WatchOptions) (WatchReport, er
 			}
 			continue
 		}
+		if result.SkippedReason == "not_a_transcript" {
+			report.Ignored++
+			continue
+		}
 		report.Extracted += result.Candidates
 		report.Added += result.Added
 	}
 	return report, nil
+}
+
+// allowsPlainText reports whether a file extension is textual by definition.
+// A JSON file is never a plain transcript: the strict parser would otherwise
+// send a configuration file to the model as one user message.
+func allowsPlainText(ext string) bool {
+	switch strings.ToLower(ext) {
+	case ".txt", ".log":
+		return true
+	default:
+		return false
+	}
 }
 
 func (a *App) watchFiles(extra []string) []string {
@@ -83,7 +102,7 @@ func (a *App) watchFiles(extra []string) []string {
 				return nil
 			}
 			switch strings.ToLower(filepath.Ext(path)) {
-			case ".jsonl", ".json", ".log", ".txt", ".md":
+			case ".jsonl", ".json", ".log", ".txt":
 				files = append(files, path)
 			}
 			return nil

@@ -207,6 +207,71 @@ func TestWatchOnceExtractsNewTranscripts(t *testing.T) {
 	}
 }
 
+func TestWatchOnceIgnoresFilesThatAreNotTranscripts(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	dir := t.TempDir()
+	files := map[string]string{
+		"settings.json":  `{"theme":"dark","model":"gpt-4o-mini"}`,
+		"storage.json":   `[{"path":"a.json"},{"path":"b.json"}]`,
+		"session.json":   `{"messages":[{"role":"user","content":"a real conversation"}]}`,
+		"session.jsonl":  "{\"role\":\"user\",\"content\":\"a jsonl conversation\"}\n",
+		"plain.txt":      "a plain transcript from the user",
+		"notes.md":       "# Notes\n\nremember this durable rule",
+		"debug.log":      "not json at all, just a log line",
+		"unrelated.yaml": "key: value",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+
+	report, err := h.app.WatchOnce(ctx, app.WatchOptions{Dirs: []string{dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	// settings.json, storage.json, session.json, session.jsonl, plain.txt and
+	// debug.log are scanned; notes.md and the YAML file are not.
+	if report.Files != 6 || report.Ignored != 2 {
+		t.Fatalf("the watch report is %+v", report)
+	}
+	if fake.calls != 4 {
+		t.Fatalf("the watch called the model %d times, want 4", fake.calls)
+	}
+	if len(report.Errors) != 0 {
+		t.Fatalf("the watch reported errors: %v", report.Errors)
+	}
+	data, err := os.ReadFile(filepath.Join(h.root, ".extract-cursor.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "settings.json") || strings.Contains(string(data), "storage.json") {
+		t.Fatalf("an ignored file got a cursor: %s", data)
+	}
+}
+
+func TestWatchOnceAcceptsAJSONDocumentWithMessages(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "chat.json"),
+		[]byte(`{"messages":[{"role":"user","content":"a document conversation"}]}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	report, err := h.app.WatchOnce(ctx, app.WatchOptions{Dirs: []string{dir}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Files != 1 || report.Ignored != 0 || fake.calls != 1 {
+		t.Fatalf("the document was not extracted: %+v calls=%d", report, fake.calls)
+	}
+}
+
 func TestInstallHooksWritesAnExecutableScript(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	path, lines, err := h.app.InstallHooks()

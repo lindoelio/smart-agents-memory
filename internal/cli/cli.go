@@ -609,9 +609,9 @@ func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errO
 		for _, warning := range report.Errors {
 			fmt.Fprintln(errOut, "warning: "+warning)
 		}
-		if report.Extracted > 0 || report.Added > 0 {
-			fmt.Fprintf(out, "watch: files=%d candidates=%d added=%d\n",
-				report.Files, report.Extracted, report.Added)
+		if report.Extracted > 0 || report.Added > 0 || report.Ignored > 0 {
+			fmt.Fprintf(out, "watch: files=%d candidates=%d added=%d ignored=%d\n",
+				report.Files, report.Extracted, report.Added, report.Ignored)
 		}
 		return nil
 	}

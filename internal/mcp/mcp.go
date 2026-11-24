@@ -99,7 +99,26 @@ func (s *Server) handle(ctx context.Context, req request) (response, bool) {
 			resp.Error = &rpcError{Code: -32602, Message: "invalid params"}
 			return resp, true
 		}
-		text, err := s.call(ctx, call.Name, call.Arguments)
+		var text string
+		var structured any
+		var err error
+		if call.Name == "memory_tree" {
+			var args struct {
+				CWD string `json:"cwd"`
+			}
+			_ = json.Unmarshal(call.Arguments, &args)
+			result, recallErr := s.App.Recall(ctx, app.RecallOptions{Tree: true, CWD: args.CWD})
+			err = recallErr
+			if err == nil {
+				text = fmt.Sprintf("revision: %s\n\n%s", result.Revision, result.Text)
+				structured = map[string]any{
+					"revision":      result.Revision,
+					"router_prompt": result.Text,
+				}
+			}
+		} else {
+			text, err = s.call(ctx, call.Name, call.Arguments)
+		}
 		if err != nil {
 			resp.Result = map[string]any{
 				"content": []map[string]string{{"type": "text", "text": err.Error()}},
@@ -107,9 +126,13 @@ func (s *Server) handle(ctx context.Context, req request) (response, bool) {
 			}
 			return resp, true
 		}
-		resp.Result = map[string]any{
+		result := map[string]any{
 			"content": []map[string]string{{"type": "text", "text": text}},
 		}
+		if structured != nil {
+			result["structuredContent"] = structured
+		}
+		resp.Result = result
 		return resp, true
 	default:
 		resp.Error = &rpcError{Code: -32601, Message: "method not found"}

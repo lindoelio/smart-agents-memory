@@ -70,6 +70,21 @@ func TestServeProtocolAndTools(t *testing.T) {
 			t.Fatalf("response %d does not contain %q: %q", i+2, want, text)
 		}
 	}
+	treeResult := responses[3]["result"].(map[string]any)
+	structured, ok := treeResult["structuredContent"].(map[string]any)
+	if !ok {
+		t.Fatalf("memory_tree has no structured content: %+v", treeResult)
+	}
+	revision, ok := structured["revision"].(string)
+	if !ok || len(revision) != 64 {
+		t.Fatalf("memory_tree revision is %q", revision)
+	}
+	if !strings.Contains(toolText(t, responses[3]), "revision: "+revision) {
+		t.Fatalf("memory_tree text does not carry the revision: %q", toolText(t, responses[3]))
+	}
+	if router, _ := structured["router_prompt"].(string); !strings.Contains(router, "Memory tree") {
+		t.Fatalf("memory_tree router is %q", router)
+	}
 }
 
 func toolText(t *testing.T, resp map[string]any) string {

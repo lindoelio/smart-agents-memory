@@ -65,7 +65,7 @@ toolchain is required.
 | `internal/gitscope` | `gitscope_test.go` | Standard checkout, linked worktree, commondir fallback and active worktrees |
 | `internal/secretguard` | `secretguard_test.go` | Every credential rule, ordinary text and zero-value echo |
 | `internal/tree` | `tree_test.go` | Category grouping, keyword limits, deterministic revision, router budget and focused subtree |
-| `internal/mcp` | `mcp_test.go` | JSON-RPC initialize, tools/list, all five tools and an unknown tool |
+| `internal/mcp` | `mcp_test.go` | JSON-RPC initialize, tools/list, all five tools, the tree revision and an unknown tool |
 | `internal/teammemory` | `teammemory_test.go` | Team writes, Qwen projection, index, secret and symlink rejection |
 | `internal/vault` | `vault_test.go` | Every file gateway carries the same corpus; the corpus travels between backends; discovery, search, log, modification time, protection by path, project and worktree notes |
 | `internal/vault/sqlite` | `sqlite_test.go` | Rename, remove, project notes, literal search, the pinned and scope column migrations |

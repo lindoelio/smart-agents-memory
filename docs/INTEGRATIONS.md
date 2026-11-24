@@ -50,9 +50,10 @@ Qwen Code and Cursor without any configuration.
 
 `smart-agents-memory mcp` is a second entrypoint over the same use cases. It
 speaks JSON-RPC 2.0 over stdin/stdout and exposes `memory_tree`,
-`memory_recall`, `memory_search`, `memory_brief` and `memory_add`. Only
-protocol messages go to stdout; warnings go to stderr. It does not need the
-symlinks, so a harness can use it directly.
+`memory_recall`, `memory_search`, `memory_brief` and `memory_add`.
+`memory_tree` returns the router and its `revision`. Only protocol messages
+go to stdout; warnings go to stderr. It does not need the symlinks, so a
+harness can use it directly.
 
 ## Why a directory, and why a file
 

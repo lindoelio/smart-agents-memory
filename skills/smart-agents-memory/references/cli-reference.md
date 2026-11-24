@@ -94,9 +94,9 @@ and worktree. The default limits are 5 entries and 12,000 characters.
 
 ### `mcp`
 
-Serves the MCP tools over JSON-RPC stdio: `memory_tree`, `memory_recall`,
-`memory_search`, `memory_brief` and `memory_add`. It writes only protocol
-messages to stdout.
+Serves the MCP tools over JSON-RPC stdio: `memory_tree` (router plus
+`revision`), `memory_recall`, `memory_search`, `memory_brief` and
+`memory_add`. It writes only protocol messages to stdout.
 
 ### `prune-worktrees [--apply]`
 

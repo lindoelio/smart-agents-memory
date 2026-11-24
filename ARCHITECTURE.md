@@ -201,8 +201,8 @@ category keeps at most 12 keywords.
 `recall --tree` returns the router or a focused subtree, `--ref` fetches exact
 bodies, and `--query` ranks by title, keywords, category, scenarios,
 description and body, boosting the active project and worktree. The same use
-case serves the MCP tools: `memory_tree`, `memory_recall`, `memory_search`,
-`memory_brief` and `memory_add`.
+case serves the MCP tools: `memory_tree` (router and revision),
+`memory_recall`, `memory_search`, `memory_brief` and `memory_add`.
 
 ## Reconciliation
 

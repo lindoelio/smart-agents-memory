@@ -3,6 +3,7 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/llm"
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
+	"github.com/lindoelio/smart-agents-memory/internal/vault"
 )
 
 type extractLLM struct {
@@ -307,5 +309,66 @@ func TestExtractFromATranscriptPathKeepsTheCursor(t *testing.T) {
 	}
 	if fake.calls != 1 || second.SkippedReason != "no_new_user_turns" {
 		t.Fatalf("the file cursor did not survive: %+v calls=%d", second, fake.calls)
+	}
+}
+
+// failingVault fails every write, like a full disk or a read-only store.
+type failingVault struct {
+	vault.Vault
+	err error
+}
+
+func (v *failingVault) Create(context.Context, memory.Entry) (memory.Entry, error) {
+	return memory.Entry{}, v.err
+}
+
+func (v *failingVault) Update(context.Context, memory.Entry) error { return v.err }
+
+func TestExtractStopsOnAWriteFailureAndRetriesWithoutDuplicates(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	fake := &extractLLM{payload: `{"candidates":[{"scope":"lesson","title":"A retried lesson","body":"The rule. Why it matters."}]}`}
+	h.app.LLM = fake
+	transcript := `{"role":"user","content":"extract this durable rule"}`
+	options := app.ExtractOptions{Transcript: transcript, SessionID: "s-retry"}
+
+	real := h.app.Vault
+	h.app.Vault = &failingVault{Vault: real, err: errors.New("disk full")}
+	report, err := h.app.Extract(ctx, options)
+	if err == nil || !strings.Contains(err.Error(), "disk full") {
+		t.Fatalf("the write failure was swallowed: %v", err)
+	}
+	if len(report.Skipped) != 0 {
+		t.Fatalf("the write failure was reported as a skip: %+v", report)
+	}
+	if report.Added != 0 {
+		t.Fatalf("the failed candidate was counted: %+v", report)
+	}
+	if _, statErr := os.Stat(filepath.Join(h.root, ".extract-cursor.json")); !os.IsNotExist(statErr) {
+		t.Fatal("the cursor advanced past an unwritten candidate")
+	}
+
+	h.app.Vault = real
+	recovered, err := h.app.Extract(ctx, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if recovered.Added != 1 || fake.calls != 2 {
+		t.Fatalf("the retry did not persist the candidate: %+v calls=%d", recovered, fake.calls)
+	}
+	entries, err := real.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the retry duplicated the entry: %+v", entries)
+	}
+
+	third, err := h.app.Extract(ctx, options)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 2 || third.SkippedReason != "no_new_user_turns" {
+		t.Fatalf("the recovered cursor did not advance: %+v calls=%d", third, fake.calls)
 	}
 }

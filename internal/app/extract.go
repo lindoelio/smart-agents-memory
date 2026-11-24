@@ -54,6 +54,15 @@ type ExtractReport struct {
 	Dream         *DreamReport
 }
 
+// candidateOutcome separates a rejected candidate from a failed write. A
+// rejection is normal and does not stop the run; a failed write is an
+// operational error, and the cursor must not move past it.
+type candidateOutcome struct {
+	Reason string
+	Added  bool
+	Err    error
+}
+
 // ExtractCandidate is one durable fact proposed by the model.
 type ExtractCandidate struct {
 	Scope          string   `json:"scope"`
@@ -141,9 +150,18 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 	existing := a.extractExisting(ctx)
 	for _, candidate := range response.Candidates {
 		report.Candidates++
-		reason := a.extractCandidate(ctx, candidate, existing, opts, &report)
-		if reason != "" {
-			report.Skipped = append(report.Skipped, candidate.Title+": "+reason)
+		outcome := a.extractCandidate(ctx, candidate, existing, opts)
+		if outcome.Err != nil {
+			// A failed write is not a rejection: the candidate is still
+			// owed, so the cursor stays where it was for the next run.
+			return report, fmt.Errorf("cannot persist %q: %w", candidate.Title, outcome.Err)
+		}
+		if outcome.Reason != "" {
+			report.Skipped = append(report.Skipped, candidate.Title+": "+outcome.Reason)
+			continue
+		}
+		if outcome.Added {
+			report.Added++
 		}
 	}
 
@@ -215,27 +233,28 @@ func (a *App) extractExisting(ctx context.Context) map[string]memory.Entry {
 	return out
 }
 
-// extractCandidate applies every safety gate. It returns a non-empty reason
-// when the candidate is rejected.
-func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, existing map[string]memory.Entry, opts ExtractOptions, report *ExtractReport) string {
+// extractCandidate applies every safety gate. A non-empty Reason means the
+// candidate was rejected; Err means the write itself failed and the caller
+// must stop before moving the cursor.
+func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, existing map[string]memory.Entry, opts ExtractOptions) candidateOutcome {
 	scope := memory.Type(strings.TrimSpace(candidate.Scope))
 	if !scope.Valid() {
-		return "invalid scope"
+		return candidateOutcome{Reason: "invalid scope"}
 	}
 	title := strings.TrimSpace(candidate.Title)
 	body := strings.TrimSpace(candidate.Body)
 	if title == "" || body == "" {
-		return "empty title or body"
+		return candidateOutcome{Reason: "empty title or body"}
 	}
 	if !memory.IsEnglish(body) {
-		return "body is not English"
+		return candidateOutcome{Reason: "body is not English"}
 	}
 	if err := secretguard.Check(title, body); err != nil {
-		return "secret detected"
+		return candidateOutcome{Reason: "secret detected"}
 	}
 	if current, ok := existing[memory.NormTitle(title)]; ok {
 		if current.Pinned || current.EffectiveTier() == memory.TierHot {
-			return "pinned or hot entry exists"
+			return candidateOutcome{Reason: "pinned or hot entry exists"}
 		}
 	}
 	project := candidate.Project
@@ -257,8 +276,7 @@ func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, 
 		category = ""
 	}
 	if opts.DryRun {
-		report.Added++
-		return ""
+		return candidateOutcome{Added: true}
 	}
 	message, err := a.Add(ctx, AddOptions{
 		Scope: string(scope), Title: title, Body: body, Source: extractSource,
@@ -268,10 +286,9 @@ func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, 
 		CWD: opts.CWD, AllowOtherLanguage: true,
 	})
 	if err != nil {
-		return err.Error()
+		return candidateOutcome{Err: err}
 	}
-	if strings.HasPrefix(message, "recorded") || strings.HasPrefix(message, "appended") {
-		report.Added++
+	return candidateOutcome{
+		Added: strings.HasPrefix(message, "recorded") || strings.HasPrefix(message, "appended"),
 	}
-	return ""
 }

@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/config"
@@ -97,6 +98,10 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return cmdMCP(ctx, opts, commandArgs, out, errOut)
 	case "dream":
 		return cmdDream(ctx, opts, commandArgs, out, errOut)
+	case "extract":
+		return cmdExtract(ctx, opts, commandArgs, out, errOut)
+	case "watch":
+		return cmdWatch(ctx, opts, commandArgs, out, errOut)
 	case "log":
 		return cmdLog(ctx, opts, commandArgs, out, errOut)
 	case "index":
@@ -501,6 +506,133 @@ func cmdDream(ctx context.Context, opts config.Options, args []string, out, errO
 	return 0
 }
 
+// cmdExtract runs one post-turn extraction.
+func cmdExtract(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("extract", out, errOut, &opts)
+	_ = fs.Bool("stdin", false, "read the transcript from stdin")
+	transcript := fs.String("transcript", "", "transcript file")
+	sessionID := fs.String("session-id", "", "session identifier")
+	cwd := fs.String("cwd", "", "working directory for project scope")
+	dryRun := fs.Bool("dry-run", false, "report without writing")
+	autoDream := fs.Bool("auto-dream", false, "run dream when the dirty threshold is reached")
+	quiet := fs.Bool("quiet", false, "print nothing")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	content := ""
+	if strings.TrimSpace(*transcript) != "" {
+		data, err := os.ReadFile(*transcript)
+		if err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+		content = string(data)
+	} else {
+		data, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+		content = string(data)
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(ctx); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if a.LLM == nil {
+		fmt.Fprintln(errOut, "error: extraction needs an LLM client")
+		return 1
+	}
+	report, err := a.Extract(ctx, app.ExtractOptions{
+		Transcript: content, TranscriptPath: *transcript, SessionID: *sessionID,
+		CWD: *cwd, DryRun: *dryRun, AutoDream: *autoDream,
+	})
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if *quiet {
+		return 0
+	}
+	if report.SkippedReason != "" {
+		fmt.Fprintf(out, "skipped: %s\n", report.SkippedReason)
+	} else {
+		fmt.Fprintf(out, "extracted: candidates=%d added=%d\n", report.Candidates, report.Added)
+	}
+	for _, skipped := range report.Skipped {
+		fmt.Fprintln(out, "skipped: "+skipped)
+	}
+	if report.Dream != nil {
+		fmt.Fprintf(out, "dream: merged=%d updated=%d deleted=%d backfilled=%d\n",
+			report.Dream.Merged, report.Dream.Updated, report.Dream.Deleted, report.Dream.Backfilled)
+	}
+	return 0
+}
+
+// cmdWatch scans transcript directories and extracts new turns.
+func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("watch", out, errOut, &opts)
+	once := fs.Bool("once", false, "scan once and exit")
+	interval := fs.Duration("interval", 5*time.Minute, "scan interval")
+	autoDream := fs.Bool("auto-dream", false, "run dream when the dirty threshold is reached")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(ctx); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if a.LLM == nil {
+		fmt.Fprintln(errOut, "error: watching needs an LLM client")
+		return 1
+	}
+	run := func() error {
+		report, err := a.WatchOnce(ctx, app.WatchOptions{AutoDream: *autoDream})
+		if err != nil {
+			return err
+		}
+		for _, warning := range report.Errors {
+			fmt.Fprintln(errOut, "warning: "+warning)
+		}
+		if report.Extracted > 0 || report.Added > 0 {
+			fmt.Fprintf(out, "watch: files=%d candidates=%d added=%d\n", report.Files, report.Extracted, report.Added)
+		}
+		return nil
+	}
+	if *once {
+		if err := run(); err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+		return 0
+	}
+	if err := run(); err != nil {
+		fmt.Fprintln(errOut, "warning: "+err.Error())
+	}
+	ticker := time.NewTicker(*interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return 0
+		case <-ticker.C:
+			if err := run(); err != nil {
+				fmt.Fprintln(errOut, "warning: "+err.Error())
+			}
+		}
+	}
+}
+
 // cmdLog prints the write log.
 func cmdLog(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
 	fs := newFlagSet("log", out, errOut, &opts)
@@ -567,6 +699,7 @@ func cmdIndex(ctx context.Context, opts config.Options, args []string, out, errO
 // cmdInstall links the tools to the store.
 func cmdInstall(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
 	fs := newFlagSet("install", out, errOut, &opts)
+	hooks := fs.Bool("hooks", false, "materialize the post-turn hook script")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
@@ -583,6 +716,16 @@ func cmdInstall(ctx context.Context, opts config.Options, args []string, out, er
 	fmt.Fprintf(out, "store: %s\n", result.Store)
 	for _, line := range result.Lines {
 		fmt.Fprintln(out, "[ok] "+line)
+	}
+	if *hooks {
+		_, lines, err := a.InstallHooks()
+		if err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+		for _, line := range lines {
+			fmt.Fprintln(out, "[hook] "+line)
+		}
 	}
 	return 0
 }
@@ -731,6 +874,8 @@ Commands:
   recall               memory tree, subtree, refs or ranked query
   mcp                  serve the MCP tools over stdin/stdout
   dream                consolidate the cold memory
+  extract              extract durable facts from a transcript
+  watch                scan transcript directories
   log                  the write log, newest first
   index                reconcile the corpus with the native projections
   install              link the tools to the store
@@ -760,7 +905,7 @@ Examples:
   %s prune-worktrees
   %s recall --tree
   %s dream --deterministic-only
-  %s install
+  %s install --hooks
 `, version.Name, version.Name,
 		config.EnvHome, config.EnvVault, config.EnvSource,
 		version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name)

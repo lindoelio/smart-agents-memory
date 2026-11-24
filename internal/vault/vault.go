@@ -150,6 +150,8 @@ type Config struct {
 	LLMModel string `json:"llm_model,omitempty"`
 	// LLMKeyEnv is the environment variable holding the key, never the key.
 	LLMKeyEnv string `json:"llm_key_env,omitempty"`
+	// WatchDirs are extra transcript directories for `watch`.
+	WatchDirs []string `json:"watch_dirs,omitempty"`
 }
 
 var registry = map[string]Factory{}

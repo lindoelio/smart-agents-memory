@@ -125,6 +125,28 @@ type InstallResult struct {
 	SkillRoot string
 }
 
+// InstallHooks materializes the post-turn hook script and returns the lines
+// that describe the harness wiring. The script always exits zero so a missing
+// LLM endpoint cannot block a coding session.
+func (a *App) InstallHooks() (string, []string, error) {
+	dir := filepath.Join(config.ShareDir(), "hooks")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", nil, err
+	}
+	path := filepath.Join(dir, "post-turn.sh")
+	script := "#!/bin/sh\nsmart-agents-memory extract --stdin --auto-dream --quiet || true\n"
+	if err := os.WriteFile(path, []byte(script), 0o755); err != nil {
+		return "", nil, err
+	}
+	lines := []string{
+		"hook: " + path,
+		"OpenCode: point the post-turn hook at " + path,
+		"Qwen Code: point the post-turn hook at " + path,
+		"Claude Code: point the post-turn hook at " + path,
+	}
+	return path, lines, nil
+}
+
 // Install links the tools to the store and materializes the skill.
 //
 // It is idempotent: running it again changes nothing. It also creates the
@@ -173,6 +195,11 @@ func (a *App) Install(ctx context.Context) (InstallResult, error) {
 				MemoryHome:     a.Cfg.MemoryHome,
 				SQLitePath:     a.Cfg.SQLitePath,
 				ProjectionRoot: a.Cfg.ProjectionRoot,
+				LLMProvider:    a.Cfg.LLMProvider,
+				LLMBaseURL:     a.Cfg.LLMBaseURL,
+				LLMModel:       a.Cfg.LLMModel,
+				LLMKeyEnv:      a.Cfg.LLMKeyEnv,
+				WatchDirs:      a.Cfg.WatchDirs,
 			}
 			if err := config.Save(a.ConfigPath, file); err == nil {
 				result.Lines = append(result.Lines, "config: "+a.ConfigPath)

@@ -29,7 +29,7 @@ func TestTheHelpListsTheCommands(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the exit code is %d", code)
 	}
-	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "dream", "log", "index", "install", "doctor", "path", "migrate", "version"} {
+	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "dream", "extract", "watch", "log", "index", "install", "doctor", "path", "migrate", "version"} {
 		if !strings.Contains(out, command) {
 			t.Errorf("the help does not mention %q", command)
 		}
@@ -114,6 +114,27 @@ func TestAddPinnedFlag(t *testing.T) {
 	pinned := filepath.Join(root, "native", "qwen", "pinned", "a-pinned-rule.md")
 	if _, err := os.Stat(pinned); err != nil {
 		t.Fatalf("the pinned projection was not written: %v", err)
+	}
+}
+
+func TestInstallHooksMaterializesTheScript(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "install", "--hooks")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "[hook] hook:") {
+		t.Fatalf("the hook was not reported:\n%s", out)
+	}
+	path := filepath.Join(home, ".local", "share", "smart-agents-memory", "hooks", "post-turn.sh")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "extract --stdin --auto-dream --quiet") {
+		t.Fatalf("the hook script is %q", data)
 	}
 }
 

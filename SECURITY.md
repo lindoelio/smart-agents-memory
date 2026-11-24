@@ -52,6 +52,10 @@ here, and it is synthetic.
 - **Team memory is committed to the repository.** Treat a team note like
   any other file you commit. `.agents/memory/` and `.qwen/team-memory/`
   reject a symlink that could redirect a write outside the worktree.
+- **Extraction cannot escalate a memory.** `extract` and `watch` force cold,
+  unpinned candidates, run the SecretGuard, and refuse a pinned or hot title.
+  The post-turn hook always exits zero, so a failing model never blocks the
+  coding harness.
 
 ## The symlinks
 

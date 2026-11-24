@@ -103,6 +103,9 @@ smart-agents-memory recall --tree           # o router de categorias
 smart-agents-memory recall --query "teste flaky"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory dream --deterministic-only
+smart-agents-memory extract --stdin --auto-dream --quiet
+smart-agents-memory watch --once
+smart-agents-memory install --hooks
 smart-agents-memory mcp                     # ferramentas JSON-RPC via stdio
 smart-agents-memory pin "Título curto"       # proteger uma entrada curada
 smart-agents-memory unpin "Título curto"     # liberar de novo
@@ -131,6 +134,8 @@ OpenAI é usada quando a variável da chave existe. A configuração guarda o
   "llm_key_env": "SMART_AGENTS_MEMORY_LLM_API_KEY"
 }
 ```
+
+`watch_dirs` é uma lista opcional de diretórios extras de transcrição para o `watch`.
 
 ## Onde a memória mora
 
@@ -196,6 +201,9 @@ mínimo. Veja a
 - **Uma árvore, não um dump.** As entradas têm categoria e cenários de uso.
   `recall --tree` é o router compacto; `--query`, `--category` e `--ref`
   buscam só o que a tarefa precisa.
+- **Extração é incremental.** `extract`/`watch` só processam turns novos de
+  `user`, mantêm um cursor durável e salvam candidatos como memórias `cold`
+  e não pinned, depois do SecretGuard e da checagem do porquê.
 
 ## Arquitetura
 

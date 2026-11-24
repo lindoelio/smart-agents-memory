@@ -102,6 +102,23 @@ groups. `--deterministic-only` skips the model, `--dry-run` reports without
 writing, and `--min-dirty` skips a run below the mutation threshold. Pinned
 and hot entries are never modified.
 
+### `extract [--stdin] [--transcript <path>] [--session-id <id>] [--cwd <dir>] [--dry-run] [--auto-dream] [--quiet]`
+
+Extracts durable facts from new user turns. It accepts JSONL, a JSON
+array/object or plain text, keeps a per-session cursor, and forces candidates
+to cold and unpinned. `--auto-dream` consolidates when the dirty threshold is
+reached.
+
+### `watch [--once] [--interval 5m] [--auto-dream]`
+
+Scans the default transcript directories and the `watch_dirs` configuration,
+running `extract` on new files. `--once` scans once and exits.
+
+### `install [--hooks]`
+
+Links the tools to the store. `--hooks` also materializes
+`<share>/hooks/post-turn.sh` and prints the harness hook snippets.
+
 ### `mcp`
 
 Serves the MCP tools over JSON-RPC stdio: `memory_tree` (router plus

@@ -22,6 +22,14 @@ environment variable is set. The configuration stores the variable name,
 never the key. Without one, `dream` runs deterministically; `recall --llm`
 reports that no client is configured.
 
+## The post-turn hook
+
+`install --hooks` writes `<share>/hooks/post-turn.sh`, which runs
+`extract --stdin --auto-dream --quiet || true`. The `|| true` is deliberate:
+a missing endpoint or a malformed transcript must never block the coding
+harness. The same script is the snippet for OpenCode, Qwen Code and Claude
+Code; each tool only needs to invoke it after a turn.
+
 ## The links
 
 `smart-agents-memory install` creates seventeen symlinks.

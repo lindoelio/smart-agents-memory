@@ -82,6 +82,7 @@ Supporting packages:
 | `internal/config` | Resolve the store: flag, environment, configuration file, discovery |
 | `internal/gitscope` | Resolve the active Git repository and linked worktree from a directory |
 | `internal/secretguard` | The high-confidence credential scan used by every memory write |
+| `internal/extract` | The transcript parser, turn normalization and extraction cursor |
 | `internal/tree` | The deterministic, budgeted memory tree and focused subtree |
 | `internal/teammemory` | The Git-backed `.agents/memory/` store and its Qwen projection |
 | `internal/llm` | The optional JSON completion port; `internal/llm/openai` is the adapter |
@@ -218,6 +219,21 @@ validation gate rejects pinned or hot targets, missing sources, empty or
 non-English bodies, secrets and unknown refs. The lock is exclusive, with a
 15-minute stale-lock recovery. The state file records dirty mutations,
 last run and status.
+
+## Post-turn extraction
+
+`internal/extract` normalizes JSONL, JSON array/object and plain text into
+`Turn{Role, Text}`. A cursor in `.extract-cursor.json` is keyed by session;
+if the transcript shrank because the harness compacted it, the cursor is
+clamped to zero so post-compaction turns are not skipped.
+
+`App.Extract` calls the model only when the unprocessed slice has a non-empty
+user turn. Candidates must be durable, English and contain the why; they are
+forced to cold and unpinned, pass the SecretGuard, and cannot overwrite a
+pinned or hot title. The cursor is saved atomically, and `--auto-dream` runs
+Dream when the dirty threshold is reached. `watch` scans the configured
+transcript directories; `install --hooks` writes a post-turn script that
+always exits zero.
 
 ## Reconciliation
 

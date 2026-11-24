@@ -105,6 +105,9 @@ smart-agents-memory recall --tree           # the category router
 smart-agents-memory recall --query "flaky test"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory dream --deterministic-only
+smart-agents-memory extract --stdin --auto-dream --quiet
+smart-agents-memory watch --once
+smart-agents-memory install --hooks
 smart-agents-memory mcp                     # JSON-RPC tools over stdio
 smart-agents-memory pin "Short title"       # protect a curated entry
 smart-agents-memory unpin "Short title"     # release it again
@@ -133,6 +136,8 @@ stores the **name** of the key variable, never the key:
   "llm_key_env": "SMART_AGENTS_MEMORY_LLM_API_KEY"
 }
 ```
+
+`watch_dirs` is an optional list of extra transcript directories for `watch`.
 
 ## Where the memory lives
 
@@ -198,6 +203,9 @@ minimum. See [the integrations reference](skills/smart-agents-memory/references/
 - **A tree, not a dump.** Entries carry a category and usage scenarios.
   `recall --tree` is the compact router; `--query`, `--category` and `--ref`
   fetch only what the task needs.
+- **Extraction is incremental.** `extract`/`watch` only process new user
+  turns, keep a durable cursor, and store candidates as cold, unpinned
+  memories after the SecretGuard and the why check.
 
 ## Architecture
 

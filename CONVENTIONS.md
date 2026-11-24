@@ -19,6 +19,7 @@ internal/memory            the domain: entries, types, tiers, slugs
 internal/tree              the memory tree snapshot, router and subtree
 internal/gitscope          the repository and linked-worktree resolver
 internal/secretguard       the high-confidence credential scan
+internal/extract           the transcript parser and extraction cursor
 internal/teammemory        the Git-backed team store and Qwen projection
 internal/llm               the optional JSON completion port
 internal/llm/openai        the OpenAI-compatible adapter
@@ -33,9 +34,9 @@ internal/skill             the skill embedded in the binary
 Two rules hold the shape together:
 
 1. **The domain knows no gateway.** `internal/memory`, `internal/native`,
-   `internal/gitscope`, `internal/tree`, `internal/secretguard` and
-   `internal/teammemory` never import `internal/vault`. The store is reached
-   through the port.
+   `internal/gitscope`, `internal/tree`, `internal/secretguard`,
+   `internal/extract` and `internal/teammemory` never import
+   `internal/vault`. The store is reached through the port.
 2. **The port knows no gateway.** `internal/vault` never imports an adapter.
    An adapter registers itself from its `init`, and the command imports it
    for the side effect.

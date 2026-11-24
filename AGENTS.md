@@ -22,9 +22,10 @@ Ports and adapters, on both sides.
   adapter lives behind it in `internal/llm/openai`.
 - **The gateways** (`internal/vault/*`) register themselves from `init`.
 - **The domain** (`internal/memory`, `internal/native`, `internal/gitscope`,
-  `internal/tree`, `internal/secretguard`, `internal/teammemory`) never imports
-  `internal/vault`: the private store is reached through the port, while
-  team memory writes to the repository directly.
+  `internal/tree`, `internal/secretguard`, `internal/extract`,
+  `internal/teammemory`) never imports `internal/vault`: the private store is
+  reached through the port, while team memory writes to the repository
+  directly.
 
 Adding a gateway: one package, one `Register` call, one line in
 `cmd/smart-agents-memory/main.go`. Adding an entrypoint: one package over

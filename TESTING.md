@@ -64,6 +64,7 @@ toolchain is required.
 | `internal/memory` | `memory_test.go` | Parse and format round trip, unknown keys, slugs, normalization, types, tiers, the English check, pinned and scope round trips |
 | `internal/gitscope` | `gitscope_test.go` | Standard checkout, linked worktree, commondir fallback and active worktrees |
 | `internal/secretguard` | `secretguard_test.go` | Every credential rule, ordinary text and zero-value echo |
+| `internal/extract` | `extract_test.go` | JSONL, JSON array/object, hook payload, plain text, compression clamp and cursor round trip |
 | `internal/tree` | `tree_test.go` | Category grouping, keyword limits, deterministic revision, router budget and focused subtree |
 | `internal/llm/openai` | `openai_test.go` | The OpenAI request, fenced JSON, HTTP failure and extraction |
 | `internal/mcp` | `mcp_test.go` | JSON-RPC initialize, tools/list, all five tools, the tree revision and an unknown tool |
@@ -73,6 +74,7 @@ toolchain is required.
 | `internal/native` | `native_test.go` | The topic, agent, user and Qwen formats round trip; the hot block is stable |
 | `internal/app` | `app_test.go` | Add, append, deduplication, index, the hot tier, install, doctor, brief, migrate, SQLite install, pinned writes, scope auto-detection, worktree pruning, team writes, team-only brief/search, recall and the secret guard |
 | `internal/app` | `dream_test.go` | Deterministic dedupe and backfill on every gateway, lock recovery, LLM merge, pinned/secret rejection and min-dirty |
+| `internal/app` | `extract_test.go` | Cursor advance, cold/unpinned candidates, pinned and secret rejection, dry-run, auto-dream, watch and hooks |
 | `internal/cli` | `cli_test.go` | Help, version, search, path, exit codes, legacy flags, a rejected backend, pinned commands, worktree flags, prune-worktrees, team writes and recall |
 | `internal/config` | `config_test.go` | The default store path, and the error of a backend that left the product |
 | `internal/link` | `link_test.go` | A second overwrite keeps the first backup |
@@ -114,6 +116,7 @@ test at the level that proves the behavior.
 | A team write or a secret scan | The team store round trip, the Qwen projection, the symlink boundary and every SecretGuard rule |
 | A taxonomy or recall mode | The category round trip, tree grouping and budget, refs, ranking and MCP tools |
 | Dream consolidation | Deterministic dedupe/backfill, lock recovery and the fail-closed LLM operation gate |
+| Post-turn extraction | Transcript formats, cursor clamp, safety gates, watch and the hook script |
 | A command or a flag | `cli_test.go`: the exit code and the output |
 | The installation | The links, the backup of an overwritten file, and `doctor` |
 | The migration | The dry run, the apply, and the idempotency |

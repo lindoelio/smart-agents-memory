@@ -43,6 +43,11 @@ All notable changes to this project are documented here. The format follows
   optional fail-closed LLM merge/update pass. Pinned and hot entries are
   never modified; the API key is referenced by environment variable, never
   stored.
+- **Post-turn extraction.** `internal/extract` parses JSONL, JSON and plain
+  text, keeps a per-session compression-safe cursor, and stores only cold,
+  unpinned candidates after the SecretGuard and the why check. `watch` scans
+  transcript directories, and `install --hooks` writes the zero-exit
+  post-turn script for OpenCode, Qwen Code and Claude Code.
 
 ## [0.2.0] — 2026-11-11
 

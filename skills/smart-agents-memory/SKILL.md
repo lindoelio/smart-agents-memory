@@ -146,6 +146,13 @@ never touched. Use `--deterministic-only` to stay offline and `--dry-run` to
 inspect the result first. `recall --llm` uses the same optional client to
 select refs from a bounded manifest.
 
+### Extraction and hooks
+
+`extract` reads a post-turn transcript from stdin or a file and stores only
+new durable user knowledge, with a per-session cursor. `watch` does the same
+for transcript directories, and `install --hooks` writes a post-turn helper
+that always exits zero. Extraction never writes hot or pinned memories.
+
 ### Project and worktree scope
 
 `brief` detects the repository and the linked worktree from the working

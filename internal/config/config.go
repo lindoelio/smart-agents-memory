@@ -76,6 +76,8 @@ type File struct {
 	LLMModel string `json:"llm_model,omitempty"`
 	// LLMKeyEnv is the environment variable holding the key, never the key.
 	LLMKeyEnv string `json:"llm_key_env,omitempty"`
+	// WatchDirs are extra transcript directories for `watch`.
+	WatchDirs []string `json:"watch_dirs,omitempty"`
 }
 
 // Load reads the configuration file. A missing file is not an error.
@@ -144,6 +146,7 @@ func Resolve(opts Options) (vault.Config, string, error) {
 		LLMBaseURL:     firstNonEmpty(os.Getenv(EnvLLMBaseURL), file.LLMBaseURL),
 		LLMModel:       firstNonEmpty(os.Getenv(EnvLLMModel), file.LLMModel),
 		LLMKeyEnv:      firstNonEmpty(os.Getenv(EnvLLMKeyEnv), file.LLMKeyEnv, DefaultLLMKeyEnv),
+		WatchDirs:      file.WatchDirs,
 	}
 
 	if home := firstNonEmpty(opts.MemoryHome, os.Getenv(EnvHome)); home != "" {

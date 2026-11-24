@@ -12,15 +12,15 @@ projections.
 
 Ports and adapters, on both sides.
 
-- **Entrypoints** (`cmd/`, `internal/cli`) are adapters. They parse
-  arguments and print results. All the behavior lives in the use cases.
+- **Entrypoints** (`cmd/`, `internal/cli`, `internal/mcp`) are adapters. They
+  parse arguments and print results. All the behavior lives in the use cases.
 - **Use cases** (`internal/app`) know the domain and the port. They never
   know the gateway.
 - **The port** (`internal/vault`) is an interface, a registry, and a
   configuration. It never imports an adapter.
 - **The gateways** (`internal/vault/*`) register themselves from `init`.
 - **The domain** (`internal/memory`, `internal/native`, `internal/gitscope`,
-  `internal/secretguard`, `internal/teammemory`) never imports
+  `internal/tree`, `internal/secretguard`, `internal/teammemory`) never imports
   `internal/vault`: the private store is reached through the port, while
   team memory writes to the repository directly.
 

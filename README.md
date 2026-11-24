@@ -101,6 +101,10 @@ smart-agents-memory add --scope project --worktree auto \
   --title "Branch decision" --body "..."    # scoped to the current worktree
 smart-agents-memory add --scope lesson --team \
   --title "Shared rule" --body "..."        # committed in .agents/memory/
+smart-agents-memory recall --tree           # the category router
+smart-agents-memory recall --query "flaky test"
+smart-agents-memory recall --ref "lesson:a-flaky-test"
+smart-agents-memory mcp                     # JSON-RPC tools over stdio
 smart-agents-memory pin "Short title"       # protect a curated entry
 smart-agents-memory unpin "Short title"     # release it again
 smart-agents-memory prune-worktrees         # report scopes of deleted worktrees
@@ -174,6 +178,9 @@ minimum. See [the integrations reference](skills/smart-agents-memory/references/
   `--worktree auto` is used.
 - **Team memory.** `--team` writes to the committed `.agents/memory/`; the
   team sees it through Git. A high-confidence credential blocks the write.
+- **A tree, not a dump.** Entries carry a category and usage scenarios.
+  `recall --tree` is the compact router; `--query`, `--category` and `--ref`
+  fetch only what the task needs.
 
 ## Architecture
 

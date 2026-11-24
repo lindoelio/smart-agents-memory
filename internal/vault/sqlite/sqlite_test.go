@@ -66,6 +66,7 @@ CREATE TABLE entries (
 	if _, err := opened.Create(ctx, memory.Entry{
 		Title: "A pinned lesson", Type: memory.TypeLesson, Body: "The rule.", Pinned: true,
 		Project: "my-repo", Worktree: "feature",
+		Category: "testing_standard", UsageScenarios: []string{"before a release"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -76,11 +77,12 @@ CREATE TABLE entries (
 	found := false
 	for _, e := range entries {
 		if e.Title == "A pinned lesson" {
-			found = e.Pinned && e.Project == "my-repo" && e.Worktree == "feature"
+			found = e.Pinned && e.Project == "my-repo" && e.Worktree == "feature" &&
+				e.Category == "testing_standard" && len(e.UsageScenarios) == 1
 		}
 	}
 	if !found {
-		t.Fatal("the scope columns did not survive the round trip")
+		t.Fatal("the pinned, scope and taxonomy columns did not survive the round trip")
 	}
 	store := opened.(*Store)
 	var index string

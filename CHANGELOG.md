@@ -30,6 +30,13 @@ All notable changes to this project are documented here. The format follows
 - **SecretGuard.** Every private and team write, and every native import,
   scans for high-confidence credentials. A match rejects or skips the write
   and names only the rule, never the matched value.
+- **Taxonomy, tree and recall.** Entries gain `category` and
+  `usage_scenarios`; `recall --tree`, `--category`, `--ref` and `--query`
+  serve the deterministic memory tree, with the active project/worktree
+  boosted in ranking.
+- **MCP server.** `smart-agents-memory mcp` exposes `memory_tree`,
+  `memory_recall`, `memory_search`, `memory_brief` and `memory_add` over
+  JSON-RPC stdio.
 
 ## [0.2.0] — 2026-11-11
 

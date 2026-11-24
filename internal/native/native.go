@@ -168,15 +168,19 @@ func RenderQwen(e memory.Entry) string {
 	b.WriteString("name: " + e.Title + "\n")
 	b.WriteString("description: " + desc + "\n")
 	b.WriteString("type: " + ntype + "\n")
-	b.WriteString("category: shared_memory\n")
+	b.WriteString("category: " + memory.InferCategory(e) + "\n")
 	if len(e.Keywords) > 0 {
 		b.WriteString("keywords:\n")
 		for _, k := range e.Keywords {
 			b.WriteString("  - " + k + "\n")
 		}
 	}
-	b.WriteString("usage_scenarios:\n")
-	b.WriteString("  - \"query the user's shared memory\"\n")
+	if len(e.UsageScenarios) > 0 {
+		b.WriteString("usage_scenarios:\n")
+		for _, scenario := range e.UsageScenarios {
+			b.WriteString("  - " + yamlScalar(scenario) + "\n")
+		}
+	}
 	b.WriteString("---\n")
 	b.WriteString("\n" + strings.TrimSpace(e.Body) + "\n")
 	return b.String()
@@ -316,31 +320,39 @@ func ParseQwen(content, fileName string) (memory.Entry, bool) {
 	if !ok {
 		return memory.Entry{}, false
 	}
-	meta := map[string]string{}
-	for _, line := range strings.Split(head, "\n") {
-		k, v, found := strings.Cut(line, ":")
-		if !found {
-			continue
+	meta := map[string]any{}
+	if err := yaml.Unmarshal([]byte(head), &meta); err != nil {
+		// A hand-edited file can carry YAML that a strict parser rejects;
+		// the simple name/type/description fields still work.
+		meta = map[string]any{}
+		for _, line := range strings.Split(head, "\n") {
+			k, v, found := strings.Cut(line, ":")
+			if !found {
+				continue
+			}
+			meta[strings.TrimSpace(k)] = strings.TrimSpace(v)
 		}
-		meta[strings.TrimSpace(k)] = strings.TrimSpace(v)
 	}
-	title := meta["name"]
+	title := scalar(meta["name"])
 	if title == "" {
 		return memory.Entry{}, false
 	}
 	typ := memory.TypeLesson
-	if meta["type"] == "user" {
+	if scalar(meta["type"]) == "user" {
 		typ = memory.TypeUser
 	}
 	return memory.Entry{
-		Title:       title,
-		Type:        typ,
-		Body:        strings.TrimSpace(body),
-		NativeType:  meta["type"],
-		Source:      "qwen-memory",
-		Native:      string(TargetQwen),
-		NativeFile:  fileName,
-		Description: meta["description"],
+		Title:          title,
+		Type:           typ,
+		Body:           strings.TrimSpace(body),
+		NativeType:     scalar(meta["type"]),
+		Source:         "qwen-memory",
+		Native:         string(TargetQwen),
+		NativeFile:     fileName,
+		Description:    scalar(meta["description"]),
+		Category:       scalar(meta["category"]),
+		Keywords:       stringList(meta["keywords"]),
+		UsageScenarios: stringList(meta["usage_scenarios"]),
 	}, true
 }
 
@@ -399,6 +411,26 @@ func splitFrontmatter(text string) (head, body string, ok bool) {
 		return "", "", false
 	}
 	return text[4 : 4+end], text[4+end+5:], true
+}
+
+// stringList reads a YAML list or scalar into a string slice.
+func stringList(raw any) []string {
+	if raw == nil {
+		return nil
+	}
+	if list, ok := raw.([]any); ok {
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if value := scalar(item); value != "" {
+				out = append(out, value)
+			}
+		}
+		return out
+	}
+	if value := scalar(raw); value != "" {
+		return []string{value}
+	}
+	return nil
 }
 
 func scalar(v any) string {

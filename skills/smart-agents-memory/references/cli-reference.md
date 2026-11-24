@@ -49,6 +49,8 @@ Records one durable memory.
 | `--project` | Repository or project slug; auto-detected for `--scope project` |
 | `--worktree` | Worktree id, or `auto` to use the current linked worktree |
 | `--team` | Write to the Git-backed `.agents/memory/` instead of the private vault |
+| `--category` | Semantic category from the memory tree taxonomy |
+| `--scenario` | Usage scenario; repeatable or comma separated |
 | `--description` | The one line a runtime injects for a cold entry |
 | `--reason` | Why the entry was recorded, stored beside the body |
 | `--tags` | Keywords, written to the frontmatter |
@@ -81,6 +83,20 @@ log records `unpin | <type> | <title>`. An entry physically stored under a
 ### `log [--limit N]`
 
 Prints the write log, newest first.
+
+### `recall [--tree] [--category <list>] [--ref <list>] [--query <text>] [--limit N] [--max-chars N]`
+
+Returns the memory tree router, a focused subtree, exact refs or a ranked
+query. `--tree` is the compact router; `--category` returns one or more
+subtrees; `--ref` fetches full bodies; `--query` ranks by title, keywords,
+category, usage scenarios, description and body, boosting the active project
+and worktree. The default limits are 5 entries and 12,000 characters.
+
+### `mcp`
+
+Serves the MCP tools over JSON-RPC stdio: `memory_tree`, `memory_recall`,
+`memory_search`, `memory_brief` and `memory_add`. It writes only protocol
+messages to stdout.
 
 ### `prune-worktrees [--apply]`
 

@@ -18,9 +18,11 @@ projections, in the format each tool already expects.
 ```mermaid
 flowchart TB
     CLI["Entrypoint<br/>cmd/smart-agents-memory + internal/cli"]
+    MCP["Entrypoint<br/>internal/mcp (JSON-RPC stdio)"]
     APP["Use cases<br/>internal/app"]
     DOM["Domain<br/>internal/memory + internal/native"]
     SCOPE["Domain<br/>internal/gitscope"]
+    TREE["Domain<br/>internal/tree"]
     TEAM["Team store<br/>internal/teammemory"]
     SG["Secret scan<br/>internal/secretguard"]
     PORT["Port<br/>internal/vault"]
@@ -28,8 +30,10 @@ flowchart TB
     PROJ["Local projections<br/>internal/projection"]
 
     CLI --> APP
+    MCP --> APP
     APP --> DOM
     APP --> SCOPE
+    APP --> TREE
     APP --> TEAM
     APP --> SG
     APP --> PORT
@@ -76,7 +80,9 @@ Supporting packages:
 | `internal/config` | Resolve the store: flag, environment, configuration file, discovery |
 | `internal/gitscope` | Resolve the active Git repository and linked worktree from a directory |
 | `internal/secretguard` | The high-confidence credential scan used by every memory write |
+| `internal/tree` | The deterministic, budgeted memory tree and focused subtree |
 | `internal/teammemory` | The Git-backed `.agents/memory/` store and its Qwen projection |
+| `internal/mcp` | The JSON-RPC stdio entrypoint and its five memory tools |
 | `internal/reconcile` | Import from the native stores, reconcile the hot tier and export the projections |
 | `internal/projection` | The local directory that holds the native stores, and the watermark of the last projection |
 | `internal/link` | The symlinks of the installation, with the backup of an overwritten file |
@@ -183,6 +189,20 @@ The store refuses a symlink at `.agents`, `.agents/memory`, `.qwen` or
 `.qwen/team-memory`, and skips a symlinked file while reading. Every write
 passes through `internal/secretguard`; the native import does too, so a
 credential in a projection is skipped instead of entering the corpus.
+
+## Structured recall and MCP
+
+`internal/tree` builds a deterministic snapshot of the private corpus and the
+team store. A leaf carries a ref, scope, category, title, description,
+keywords, usage scenarios and the pinned flag. The revision is a SHA-256 of
+the canonical leaves. The global router stays within 6000 characters; a
+category keeps at most 12 keywords.
+
+`recall --tree` returns the router or a focused subtree, `--ref` fetches exact
+bodies, and `--query` ranks by title, keywords, category, scenarios,
+description and body, boosting the active project and worktree. The same use
+case serves the MCP tools: `memory_tree`, `memory_recall`, `memory_search`,
+`memory_brief` and `memory_add`.
 
 ## Reconciliation
 

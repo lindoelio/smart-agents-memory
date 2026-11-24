@@ -46,6 +46,14 @@ Neither carries heavy content.
 `~/.agents/skills` is the universal layout: it is read by MiniMax Code,
 Qwen Code and Cursor without any configuration.
 
+## The MCP server
+
+`smart-agents-memory mcp` is a second entrypoint over the same use cases. It
+speaks JSON-RPC 2.0 over stdin/stdout and exposes `memory_tree`,
+`memory_recall`, `memory_search`, `memory_brief` and `memory_add`. Only
+protocol messages go to stdout; warnings go to stderr. It does not need the
+symlinks, so a harness can use it directly.
+
 ## Why a directory, and why a file
 
 A memory directory is a symlink of a **directory**, never of a file. The

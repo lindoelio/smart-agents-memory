@@ -151,6 +151,12 @@ func (s *Store) Add(ctx context.Context, e memory.Entry, opts AddOptions) (Write
 		if e.Tier != "" {
 			entry.Tier = e.Tier
 		}
+		if e.Category != "" {
+			entry.Category = e.Category
+		}
+		if len(e.UsageScenarios) > 0 {
+			entry.UsageScenarios = mergeUnique(entry.UsageScenarios, e.UsageScenarios)
+		}
 		if entry.Project == "" {
 			entry.Project = e.Project
 		}
@@ -437,6 +443,23 @@ func (s *Store) uniqueRel(root, rel string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("cannot find a free team memory name for %s", rel)
+}
+
+// mergeUnique appends values that are not already present.
+func mergeUnique(existing, added []string) []string {
+	seen := map[string]bool{}
+	for _, value := range existing {
+		seen[value] = true
+	}
+	out := append([]string(nil), existing...)
+	for _, value := range added {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
 }
 
 func typeIndex(t memory.Type) int {

@@ -219,6 +219,23 @@ func (a *App) Brief(ctx context.Context, opts BriefOptions) (string, error) {
 	return strings.Join(parts, "\n"), nil
 }
 
+// mergeUnique appends values that are not already present.
+func mergeUnique(existing, added []string) []string {
+	seen := map[string]bool{}
+	for _, value := range existing {
+		seen[value] = true
+	}
+	out := append([]string(nil), existing...)
+	for _, value := range added {
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, value)
+	}
+	return out
+}
+
 // scopedEntries returns the cold entries of one project or worktree.
 func scopedEntries(corpus []memory.Entry, project, worktree string) []memory.Entry {
 	var out []memory.Entry
@@ -328,6 +345,10 @@ type AddOptions struct {
 	CWD string
 	// Team writes to the Git-backed team store instead of the private vault.
 	Team bool
+	// Category is the semantic taxonomy bucket.
+	Category string
+	// UsageScenarios are the situations in which the entry applies.
+	UsageScenarios []string
 	// Description is the one line a runtime injects for a cold entry.
 	Description string
 	// Reason is why an entry was appended to the profile.
@@ -348,6 +369,9 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 	}
 	if !scope.Valid() {
 		return "", fmt.Errorf("invalid scope %q (use %s)", scope, typeList())
+	}
+	if opts.Category != "" && !memory.ValidCategory(opts.Category) {
+		return "", fmt.Errorf("invalid category %q", opts.Category)
 	}
 	body := strings.TrimSpace(opts.Body)
 	if body == "" {
@@ -427,6 +451,12 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 		if opts.Tier != "" {
 			e.Tier = tier
 		}
+		if opts.Category != "" {
+			e.Category = opts.Category
+		}
+		if len(opts.UsageScenarios) > 0 {
+			e.UsageScenarios = mergeUnique(e.UsageScenarios, opts.UsageScenarios)
+		}
 		// A pinned entry stays pinned unless an explicit command unpins
 		// it. --pinned can add protection, never remove it.
 		if opts.Pinned {
@@ -455,20 +485,22 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 	}
 
 	entry := memory.Entry{
-		Title:       opts.Title,
-		Type:        scope,
-		Date:        time.Now().Format("2006-01-02"),
-		Source:      source,
-		Native:      native,
-		NativeType:  scope.NativeType(),
-		Tier:        tier,
-		Pinned:      opts.Pinned,
-		Project:     opts.Project,
-		Worktree:    opts.Worktree,
-		Description: opts.Description,
-		Reason:      opts.Reason,
-		Keywords:    opts.Tags,
-		Body:        body,
+		Title:          opts.Title,
+		Type:           scope,
+		Date:           time.Now().Format("2006-01-02"),
+		Source:         source,
+		Native:         native,
+		NativeType:     scope.NativeType(),
+		Tier:           tier,
+		Pinned:         opts.Pinned,
+		Project:        opts.Project,
+		Worktree:       opts.Worktree,
+		Description:    opts.Description,
+		Reason:         opts.Reason,
+		Keywords:       opts.Tags,
+		Category:       opts.Category,
+		UsageScenarios: opts.UsageScenarios,
+		Body:           body,
 	}
 	stored, err := a.Vault.Create(ctx, entry)
 	if err != nil {

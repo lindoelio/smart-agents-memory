@@ -16,6 +16,7 @@ import (
 var knownKeys = []string{
 	"title", "type", "date", "source", "native", "tier", "pinned",
 	"project", "worktree",
+	"category", "usage_scenarios",
 	"native_file", "native_type", "reason", "description", "keywords",
 }
 
@@ -54,33 +55,27 @@ func Parse(text string) (Entry, bool) {
 		return Entry{}, false
 	}
 
-	keywords := []string{}
-	if raw, ok := meta["keywords"]; ok {
-		if list, ok := raw.([]any); ok {
-			for _, item := range list {
-				keywords = append(keywords, scalar(item))
-			}
-		} else if s := scalar(raw); s != "" {
-			keywords = append(keywords, s)
-		}
-	}
+	keywords := stringList(meta["keywords"])
+	scenarios := stringList(meta["usage_scenarios"])
 
 	entry := Entry{
-		Title:       title,
-		Type:        Type(flat["type"]),
-		Date:        flat["date"],
-		Source:      flat["source"],
-		Native:      flat["native"],
-		Tier:        Tier(flat["tier"]),
-		Pinned:      flat["pinned"] == "true",
-		Project:     flat["project"],
-		Worktree:    flat["worktree"],
-		NativeFile:  flat["native_file"],
-		NativeType:  flat["native_type"],
-		Reason:      flat["reason"],
-		Description: flat["description"],
-		Keywords:    keywords,
-		Body:        strings.TrimSpace(stripTitleHeading(body)),
+		Title:          title,
+		Type:           Type(flat["type"]),
+		Date:           flat["date"],
+		Source:         flat["source"],
+		Native:         flat["native"],
+		Tier:           Tier(flat["tier"]),
+		Pinned:         flat["pinned"] == "true",
+		Project:        flat["project"],
+		Worktree:       flat["worktree"],
+		NativeFile:     flat["native_file"],
+		NativeType:     flat["native_type"],
+		Reason:         flat["reason"],
+		Description:    flat["description"],
+		Keywords:       keywords,
+		Category:       flat["category"],
+		UsageScenarios: scenarios,
+		Body:           strings.TrimSpace(stripTitleHeading(body)),
 	}
 	entry.Extra = map[string]string{}
 	for k, v := range flat {
@@ -134,10 +129,19 @@ func Format(e Entry) string {
 	if e.Description != "" {
 		b.WriteString("description: " + quote(e.Description) + "\n")
 	}
+	if e.Category != "" {
+		b.WriteString("category: " + e.Category + "\n")
+	}
 	if len(e.Keywords) > 0 {
 		b.WriteString("keywords:\n")
 		for _, k := range e.Keywords {
 			b.WriteString("  - " + k + "\n")
+		}
+	}
+	if len(e.UsageScenarios) > 0 {
+		b.WriteString("usage_scenarios:\n")
+		for _, s := range e.UsageScenarios {
+			b.WriteString("  - " + quote(s) + "\n")
 		}
 	}
 	for _, k := range sortedKeys(e.Extra) {
@@ -205,6 +209,26 @@ func sortedKeys(extra map[string]string) []string {
 		}
 	}
 	return out
+}
+
+// stringList reads a YAML list or scalar into a string slice.
+func stringList(raw any) []string {
+	if raw == nil {
+		return nil
+	}
+	if list, ok := raw.([]any); ok {
+		out := make([]string, 0, len(list))
+		for _, item := range list {
+			if value := scalar(item); value != "" {
+				out = append(out, value)
+			}
+		}
+		return out
+	}
+	if value := scalar(raw); value != "" {
+		return []string{value}
+	}
+	return nil
 }
 
 // scalar renders a YAML value as the plain string the corpus uses.

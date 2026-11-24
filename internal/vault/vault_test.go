@@ -43,16 +43,18 @@ func fixture() []memory.Entry {
 			NativeType: "reference",
 		},
 		{
-			Title:      "A project decision",
-			Type:       memory.TypeProject,
-			Date:       "2026-11-07",
-			Body:       "The Flutter client lives in apps/client, not apps/web.",
-			Tier:       memory.TierCold,
-			Pinned:     true,
-			Source:     memory.DefaultSource,
-			Project:    "demo",
-			Native:     "minimax-agent",
-			NativeType: "reference",
+			Title:          "A project decision",
+			Type:           memory.TypeProject,
+			Date:           "2026-11-07",
+			Body:           "The Flutter client lives in apps/client, not apps/web.",
+			Tier:           memory.TierCold,
+			Pinned:         true,
+			Source:         memory.DefaultSource,
+			Project:        "demo",
+			Category:       "important_decision",
+			UsageScenarios: []string{"when choosing the client layout"},
+			Native:         "minimax-agent",
+			NativeType:     "reference",
 		},
 	}
 }
@@ -126,6 +128,9 @@ func check(t *testing.T, kind string, entries []memory.Entry) {
 		}
 		if e.Project != original.Project || e.Worktree != original.Worktree {
 			t.Fatalf("%s: the scope of %q is %q@%q, want %q@%q", kind, e.Title, e.Project, e.Worktree, original.Project, original.Worktree)
+		}
+		if e.Category != original.Category || len(e.UsageScenarios) != len(original.UsageScenarios) {
+			t.Fatalf("%s: the taxonomy of %q is %q/%v, want %q/%v", kind, e.Title, e.Category, e.UsageScenarios, original.Category, original.UsageScenarios)
 		}
 		if e.Date != original.Date {
 			t.Fatalf("%s: the date of %q is %q, want %q", kind, e.Title, e.Date, original.Date)

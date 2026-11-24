@@ -35,6 +35,8 @@ CREATE TABLE IF NOT EXISTS entries (
 	pinned       INTEGER NOT NULL DEFAULT 0,
 	project      TEXT NOT NULL DEFAULT '',
 	worktree     TEXT NOT NULL DEFAULT '',
+	category     TEXT NOT NULL DEFAULT '',
+	usage_scenarios TEXT NOT NULL DEFAULT '',
 	source       TEXT NOT NULL DEFAULT '',
 	native       TEXT NOT NULL DEFAULT '',
 	native_type  TEXT NOT NULL DEFAULT '',
@@ -126,6 +128,8 @@ func ensureColumns(db *sql.DB) error {
 		{"pinned", "INTEGER NOT NULL DEFAULT 0"},
 		{"project", "TEXT NOT NULL DEFAULT ''"},
 		{"worktree", "TEXT NOT NULL DEFAULT ''"},
+		{"category", "TEXT NOT NULL DEFAULT ''"},
+		{"usage_scenarios", "TEXT NOT NULL DEFAULT ''"},
 	} {
 		if err := ensureColumn(db, column.name, column.definition); err != nil {
 			return err
@@ -233,6 +237,7 @@ func (s *Store) Entries(ctx context.Context) ([]memory.Entry, error) {
 		return nil, err
 	}
 	rows, err := db.QueryContext(ctx, `SELECT id, title, type, date, body, tier, pinned, project, worktree,
+		category, usage_scenarios,
 		source, native, native_type, native_file, reason, description, keywords, extra, updated_at
 		FROM entries ORDER BY type, lower(title)`)
 	if err != nil {
@@ -247,18 +252,20 @@ func (s *Store) Entries(ctx context.Context) ([]memory.Entry, error) {
 			id        int
 			pinned    int
 			keywords  string
+			scenarios string
 			extra     string
 			updatedAt int64
 		)
 		if err := rows.Scan(&id, &e.Title, &e.Type, &e.Date, &e.Body, &e.Tier, &pinned,
-			&e.Project, &e.Worktree, &e.Source, &e.Native, &e.NativeType, &e.NativeFile,
-			&e.Reason, &e.Description, &keywords, &extra, &updatedAt); err != nil {
+			&e.Project, &e.Worktree, &e.Category, &scenarios, &e.Source, &e.Native,
+			&e.NativeType, &e.NativeFile, &e.Reason, &e.Description, &keywords, &extra, &updatedAt); err != nil {
 			return nil, err
 		}
 		e.Path = fmt.Sprintf("entries/%d", id)
 		e.ModTime = time.Unix(updatedAt, 0)
 		e.Pinned = pinned != 0
 		e.Keywords = decodeList(keywords)
+		e.UsageScenarios = decodeList(scenarios)
 		e.Extra = decodeMap(extra)
 		out = append(out, e)
 	}
@@ -285,11 +292,13 @@ func (s *Store) Create(ctx context.Context, e memory.Entry) (memory.Entry, error
 	}
 	now := time.Now()
 	res, err := db.ExecContext(ctx, `INSERT INTO entries
-		(title, type, date, body, tier, pinned, project, worktree, source, native, native_type, native_file,
+		(title, type, date, body, tier, pinned, project, worktree, category, usage_scenarios,
+		 source, native, native_type, native_file,
 		 reason, description, keywords, extra, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		e.Title, string(e.Type), e.Date, e.Body, string(e.Tier), boolToInt(e.Pinned),
-		e.Project, e.Worktree, e.Source, e.Native,
+		e.Project, e.Worktree, e.Category, encodeList(e.UsageScenarios),
+		e.Source, e.Native,
 		e.NativeType, e.NativeFile, e.Reason, e.Description,
 		encodeList(e.Keywords), encodeMap(e.Extra), now.Unix())
 	if err != nil {
@@ -315,10 +324,12 @@ func (s *Store) Update(ctx context.Context, e memory.Entry) error {
 		return err
 	}
 	_, err = db.ExecContext(ctx, `UPDATE entries SET title=?, type=?, date=?, body=?, tier=?,
-		pinned=?, project=?, worktree=?, source=?, native=?, native_type=?, native_file=?,
+		pinned=?, project=?, worktree=?, category=?, usage_scenarios=?,
+		source=?, native=?, native_type=?, native_file=?,
 		reason=?, description=?, keywords=?, extra=?, updated_at=? WHERE id=?`,
 		e.Title, string(e.Type), e.Date, e.Body, string(e.Tier), boolToInt(e.Pinned),
-		e.Project, e.Worktree, e.Source, e.Native,
+		e.Project, e.Worktree, e.Category, encodeList(e.UsageScenarios),
+		e.Source, e.Native,
 		e.NativeType, e.NativeFile, e.Reason, e.Description,
 		encodeList(e.Keywords), encodeMap(e.Extra), time.Now().Unix(), id)
 	return err

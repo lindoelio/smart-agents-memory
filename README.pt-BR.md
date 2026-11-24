@@ -99,6 +99,10 @@ smart-agents-memory add --scope project --worktree auto \
   --title "Decisão da branch" --body "..."   # no worktree atual
 smart-agents-memory add --scope lesson --team \
   --title "Regra compartilhada" --body "..." # em .agents/memory/
+smart-agents-memory recall --tree           # o router de categorias
+smart-agents-memory recall --query "teste flaky"
+smart-agents-memory recall --ref "lesson:a-flaky-test"
+smart-agents-memory mcp                     # ferramentas JSON-RPC via stdio
 smart-agents-memory pin "Título curto"       # proteger uma entrada curada
 smart-agents-memory unpin "Título curto"     # liberar de novo
 smart-agents-memory prune-worktrees          # escopos de worktrees removidos
@@ -172,6 +176,9 @@ mínimo. Veja a
   `--worktree auto`.
 - **Team memory.** `--team` escreve no `.agents/memory/` versionado; o time
   recebe pelo Git. Uma credencial de alta confiança bloqueia a escrita.
+- **Uma árvore, não um dump.** As entradas têm categoria e cenários de uso.
+  `recall --tree` é o router compacto; `--query`, `--category` e `--ref`
+  buscam só o que a tarefa precisa.
 
 ## Arquitetura
 

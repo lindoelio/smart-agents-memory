@@ -52,6 +52,10 @@ smart-agents-memory search "neon"           # search the whole corpus
 smart-agents-memory brief                   # profile + index + active repo/worktree
 smart-agents-memory brief --global          # ignore the working directory
 smart-agents-memory brief --project <slug>  # another project
+smart-agents-memory recall --tree           # the category router
+smart-agents-memory recall --query "flaky test"
+smart-agents-memory recall --category testing_standard
+smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory search "flutter" --limit 5
 smart-agents-memory path                    # where the store lives
 ```
@@ -123,6 +127,15 @@ A pinned entry is never overwritten, renamed or deleted by imports or
 consolidation. In Qwen Code it is projected under `pinned/`, the protected
 directory its background workers cannot modify. Do not pin automatically
 generated memories; pin only what the person explicitly curated.
+
+### Structured recall
+
+Every entry has a semantic `category` and optional `usage_scenarios`. When
+recording, set `--category` and `--scenario` when the defaults are ambiguous.
+Use `recall --tree` to see the map, `--category` for a focused subtree,
+`--query` for ranked context and `--ref` for an exact body. The MCP server
+exposes the same operations as `memory_tree`, `memory_recall`,
+`memory_search`, `memory_brief` and `memory_add`.
 
 ### Project and worktree scope
 

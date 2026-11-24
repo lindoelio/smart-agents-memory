@@ -78,6 +78,10 @@ type Entry struct {
 	Reason      string
 	Description string
 	Keywords    []string
+	// Category is the semantic taxonomy bucket.
+	Category string
+	// UsageScenarios are the situations in which the entry applies.
+	UsageScenarios []string
 	// Pinned protects the entry from automated edits, imports, and
 	// consolidation. It is the corpus-owned state; the Qwen projection
 	// materializes it as the protected pinned/ directory.

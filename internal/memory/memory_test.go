@@ -117,6 +117,49 @@ func TestProjectAndWorktreeRoundTrip(t *testing.T) {
 	}
 }
 
+func TestCategoryAndScenariosRoundTrip(t *testing.T) {
+	entry := Entry{
+		Title: "A testing lesson", Type: TypeLesson, Body: "The rule.",
+		Category: "testing_standard", UsageScenarios: []string{"when a test is flaky", "before a release"},
+	}
+	formatted := Format(entry)
+	if !strings.Contains(formatted, "category: testing_standard\n") ||
+		!strings.Contains(formatted, "usage_scenarios:\n  - \"when a test is flaky\"\n") {
+		t.Fatalf("the taxonomy is missing from the format:\n%s", formatted)
+	}
+	parsed, ok := Parse(formatted)
+	if !ok {
+		t.Fatal("the classified note did not parse")
+	}
+	if parsed.Category != "testing_standard" || len(parsed.UsageScenarios) != 2 {
+		t.Fatalf("the taxonomy came back as %+v", parsed)
+	}
+}
+
+func TestInferCategory(t *testing.T) {
+	cases := []struct {
+		entry Entry
+		want  string
+	}{
+		{Entry{Type: TypeUser, Title: "Communication preference"}, "communication_preference"},
+		{Entry{Type: TypeUser, Title: "Identity"}, "basic_information"},
+		{Entry{Type: TypeProject, Title: "Tech stack"}, "tech_stack"},
+		{Entry{Type: TypeProject, Title: "A decision"}, "important_decision"},
+		{Entry{Type: TypeLesson, Title: "Flaky test"}, "testing_standard"},
+		{Entry{Type: TypeLesson, Title: "MCP setup"}, "mcp_experience"},
+		{Entry{Type: TypeLesson, Title: "A regression trap"}, "common_pitfall"},
+		{Entry{Type: TypeReference, Title: "Dashboard pointer"}, "tool_experience"},
+	}
+	for _, tc := range cases {
+		if got := InferCategory(tc.entry); got != tc.want {
+			t.Errorf("InferCategory(%q) = %q, want %q", tc.entry.Title, got, tc.want)
+		}
+	}
+	if !ValidCategory("important_decision") || !ValidCategory(Uncategorized) || ValidCategory("nonsense") {
+		t.Fatal("ValidCategory is wrong")
+	}
+}
+
 func TestParseKeepsUnknownKeys(t *testing.T) {
 	source := `---
 title: "Keeps what it does not know"

@@ -64,12 +64,14 @@ toolchain is required.
 | `internal/memory` | `memory_test.go` | Parse and format round trip, unknown keys, slugs, normalization, types, tiers, the English check, pinned and scope round trips |
 | `internal/gitscope` | `gitscope_test.go` | Standard checkout, linked worktree, commondir fallback and active worktrees |
 | `internal/secretguard` | `secretguard_test.go` | Every credential rule, ordinary text and zero-value echo |
+| `internal/tree` | `tree_test.go` | Category grouping, keyword limits, deterministic revision, router budget and focused subtree |
+| `internal/mcp` | `mcp_test.go` | JSON-RPC initialize, tools/list, all five tools and an unknown tool |
 | `internal/teammemory` | `teammemory_test.go` | Team writes, Qwen projection, index, secret and symlink rejection |
 | `internal/vault` | `vault_test.go` | Every file gateway carries the same corpus; the corpus travels between backends; discovery, search, log, modification time, protection by path, project and worktree notes |
 | `internal/vault/sqlite` | `sqlite_test.go` | Rename, remove, project notes, literal search, the pinned and scope column migrations |
 | `internal/native` | `native_test.go` | The topic, agent, user and Qwen formats round trip; the hot block is stable |
-| `internal/app` | `app_test.go` | Add, append, deduplication, index, the hot tier, install, doctor, brief, migrate, SQLite install, pinned writes, scope auto-detection, worktree pruning, team writes, team-only brief/search and the secret guard |
-| `internal/cli` | `cli_test.go` | Help, version, search, path, exit codes, legacy flags, a rejected backend, pinned commands, worktree flags, prune-worktrees and team writes |
+| `internal/app` | `app_test.go` | Add, append, deduplication, index, the hot tier, install, doctor, brief, migrate, SQLite install, pinned writes, scope auto-detection, worktree pruning, team writes, team-only brief/search, recall and the secret guard |
+| `internal/cli` | `cli_test.go` | Help, version, search, path, exit codes, legacy flags, a rejected backend, pinned commands, worktree flags, prune-worktrees, team writes and recall |
 | `internal/config` | `config_test.go` | The default store path, and the error of a backend that left the product |
 | `internal/link` | `link_test.go` | A second overwrite keeps the first backup |
 | `internal/skill` | `skill_test.go` | The skill lands in the layout the tools expect, with its references |
@@ -108,6 +110,7 @@ test at the level that proves the behavior.
 | A pinned entry | The round trip, the path protection, the Qwen projection, the refusal without `--force` and the import guard |
 | A repository or worktree scope | The resolver, the round trip, auto-detection in add and brief, stale report and prune |
 | A team write or a secret scan | The team store round trip, the Qwen projection, the symlink boundary and every SecretGuard rule |
+| A taxonomy or recall mode | The category round trip, tree grouping and budget, refs, ranking and MCP tools |
 | A command or a flag | `cli_test.go`: the exit code and the output |
 | The installation | The links, the backup of an overwritten file, and `doctor` |
 | The migration | The dry run, the apply, and the idempotency |

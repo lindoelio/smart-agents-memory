@@ -33,6 +33,8 @@ The rule, and what it costs. The why is what makes it reusable.
 | `pinned` | `true` protects the entry from automated edits, imports and consolidation |
 | `project` | The repository or project slug the entry belongs to |
 | `worktree` | The linked git worktree identifier, when scoped to one worktree |
+| `category` | The semantic category used by the memory tree |
+| `usage_scenarios` | A list of situations in which the entry applies |
 | `native_type` | The type of the entry in the native format |
 | `native_file` | The name of the file of the native projection |
 | `reason` | Why the entry was appended to the user profile |
@@ -41,6 +43,17 @@ The rule, and what it costs. The why is what makes it reusable.
 
 A property the product does not know is **preserved**. A round trip never
 drops what was written by hand.
+
+## The taxonomy
+
+`category` is one of the twenty semantic categories used by the memory tree,
+or `uncategorized`. `usage_scenarios` lists the situations in which the entry
+applies. When the category is absent, `InferCategory` derives a deterministic
+default from the type, title, description and keywords.
+
+`recall --tree` renders the categories with their refs; `recall --category`
+returns one subtree; `recall --query` ranks by title, keywords, category,
+scenarios, description and body, with the active project and worktree boosted.
 
 ## Project and worktree scope
 

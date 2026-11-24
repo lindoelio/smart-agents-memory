@@ -29,7 +29,7 @@ func TestTheHelpListsTheCommands(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the exit code is %d", code)
 	}
-	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "log", "index", "install", "doctor", "path", "migrate", "version"} {
+	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "log", "index", "install", "doctor", "path", "migrate", "version"} {
 		if !strings.Contains(out, command) {
 			t.Errorf("the help does not mention %q", command)
 		}
@@ -114,6 +114,55 @@ func TestAddPinnedFlag(t *testing.T) {
 	pinned := filepath.Join(root, "native", "qwen", "pinned", "a-pinned-rule.md")
 	if _, err := os.Stat(pinned); err != nil {
 		t.Fatalf("the pinned projection was not written: %v", err)
+	}
+}
+
+func TestRecallModes(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	if code, _, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
+		"add", "--scope", "lesson", "--title", "A flaky test",
+		"--body", "The flaky test stops the release.", "--category", "testing_standard",
+		"--scenario", "before a release"); code != 0 {
+		t.Fatalf("cannot create the entry: %s", errOut)
+	}
+
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "recall", "--tree")
+	if code != 0 {
+		t.Fatalf("recall --tree: %d %s", code, errOut)
+	}
+	if !strings.Contains(out, "testing_standard") || !strings.Contains(out, "lesson:a-flaky-test") {
+		t.Fatalf("the tree is %q", out)
+	}
+
+	code, out, _ = run(t, "--vault", "obsidian", "--memory-home", root, "recall",
+		"--category", "testing_standard")
+	if code != 0 || !strings.Contains(out, "before a release") {
+		t.Fatalf("the category recall is %q", out)
+	}
+
+	code, out, _ = run(t, "--vault", "obsidian", "--memory-home", root, "recall",
+		"--ref", "lesson:a-flaky-test")
+	if code != 0 || !strings.Contains(out, "The flaky test stops the release.") {
+		t.Fatalf("the ref recall is %q", out)
+	}
+
+	code, out, _ = run(t, "--vault", "obsidian", "--memory-home", root, "recall",
+		"--query", "flaky", "--limit", "1")
+	if code != 0 || !strings.Contains(out, "A flaky test") {
+		t.Fatalf("the query recall is %q", out)
+	}
+}
+
+func TestRecallWithoutAStoreOrTeam(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "missing")
+	t.Setenv("HOME", t.TempDir())
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "recall", "--tree")
+	if code != 0 {
+		t.Fatalf("recall without a store: %d %s", code, errOut)
+	}
+	if !strings.Contains(out, "No memories are available.") {
+		t.Fatalf("the empty tree is %q", out)
 	}
 }
 

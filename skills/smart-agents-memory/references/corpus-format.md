@@ -32,6 +32,8 @@ The rule. Why it matters. What it cost.
 | `pinned` | `true` protects the entry from automated edits, imports and consolidation |
 | `project` | The repository or project slug |
 | `worktree` | The linked git worktree identifier |
+| `category` | Semantic category from the memory tree |
+| `usage_scenarios` | Situations in which the entry applies |
 | `native_type` | The type of the entry in the native format |
 | `native_file` | The file name of the native projection |
 | `reason` | Why the entry was appended to the user profile |
@@ -104,5 +106,10 @@ The corpus is read by every tool, in the format each one already expects.
 | `minimax-agent` (cold) | A topic file: only the description enters the context |
 | `qwen` | Frontmatter with `name`, `description`, `type`, `category` |
 | `qwen`, pinned | The same topic, under `pinned/<file>.md` |
+
+`category` is one of the twenty semantic categories, or `uncategorized`.
+`usage_scenarios` is a YAML list. `recall --tree` groups by category;
+`recall --category` returns a subtree; `recall --query` ranks by title,
+keywords, category, scenarios, description and body.
 
 A projection is never merged: it is regenerated from the corpus.

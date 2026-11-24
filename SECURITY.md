@@ -46,8 +46,8 @@ here, and it is synthetic.
 - **SecretGuard blocks high-confidence credentials.** `add`, the native
   import and every team write scan the title and the body for the gitleaks
   patterns. A match rejects the write; the error names the rule, never the
-  matched value. The scan is a backstop, not a guarantee: do not put a
-  credential in a memory entry.
+  matched value. The MCP `memory_add` goes through the same path. The scan
+  is a backstop, not a guarantee: do not put a credential in a memory entry.
 - **Team memory is committed to the repository.** Treat a team note like
   any other file you commit. `.agents/memory/` and `.qwen/team-memory/`
   reject a symlink that could redirect a write outside the worktree.

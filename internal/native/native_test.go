@@ -58,6 +58,7 @@ func TestQwenRoundTrip(t *testing.T) {
 	entry := memory.Entry{
 		Title: "A preference", Body: "The rule.", Description: "One line",
 		NativeType: "user", Keywords: []string{"memory"},
+		Category: "communication_preference", UsageScenarios: []string{"when choosing a reply"},
 	}
 	parsed, ok := ParseQwen(RenderQwen(entry), "a-preference.md")
 	if !ok {
@@ -65,6 +66,9 @@ func TestQwenRoundTrip(t *testing.T) {
 	}
 	if parsed.Title != entry.Title || parsed.Body != entry.Body || parsed.Description != entry.Description {
 		t.Fatalf("the qwen file came back as %+v", parsed)
+	}
+	if parsed.Category != entry.Category || len(parsed.UsageScenarios) != 1 {
+		t.Fatalf("the qwen taxonomy came back as %+v", parsed)
 	}
 }
 

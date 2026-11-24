@@ -11,10 +11,12 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/config"
+	"github.com/lindoelio/smart-agents-memory/internal/mcp"
 	"github.com/lindoelio/smart-agents-memory/internal/version"
 )
 
@@ -88,6 +90,10 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return cmdSetPinned(ctx, opts, commandArgs, false, out, errOut)
 	case "prune-worktrees":
 		return cmdPruneWorktrees(ctx, opts, commandArgs, out, errOut)
+	case "recall":
+		return cmdRecall(ctx, opts, commandArgs, out, errOut)
+	case "mcp":
+		return cmdMCP(ctx, opts, commandArgs, out, errOut)
 	case "log":
 		return cmdLog(ctx, opts, commandArgs, out, errOut)
 	case "index":
@@ -254,6 +260,9 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 	tier := fs.String("tier", "cold", "hot or cold")
 	description := fs.String("description", "", "the one line a runtime injects")
 	reason := fs.String("reason", "", "why the entry was recorded")
+	category := fs.String("category", "", "semantic category")
+	scenarios := &stringListFlag{}
+	fs.Var(scenarios, "scenario", "usage scenario (repeatable or comma separated)")
 	pinned := fs.Bool("pinned", false, "protect the entry from automated edits")
 	team := fs.Bool("team", false, "write to the Git-backed team memory")
 	project := fs.String("project", "", "repository or project slug")
@@ -288,6 +297,8 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 		Description:        *description,
 		Reason:             *reason,
 		Tags:               splitTags(*tags),
+		Category:           *category,
+		UsageScenarios:     splitScenarios(scenarios.values),
 		Pinned:             *pinned,
 		Project:            *project,
 		Worktree:           worktreeValue(*worktree),
@@ -387,6 +398,59 @@ func cmdPruneWorktrees(ctx context.Context, opts config.Options, args []string, 
 	}
 	if !*apply {
 		fmt.Fprintf(out, "\n%d stale item(s). run again with --apply to remove them.\n", count)
+	}
+	return 0
+}
+
+// cmdRecall reads the memory tree, a subtree, refs or a ranked query.
+func cmdRecall(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("recall", out, errOut, &opts)
+	treeMode := fs.Bool("tree", false, "return the memory tree router")
+	category := fs.String("category", "", "category list, comma separated")
+	ref := fs.String("ref", "", "memory refs, comma separated")
+	query := fs.String("query", "", "rank memories by this query")
+	limit := fs.Int("limit", 5, "maximum number of ranked memories")
+	maxChars := fs.Int("max-chars", 12000, "maximum output characters")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	result, err := a.Recall(ctx, app.RecallOptions{
+		Tree:       *treeMode,
+		Categories: splitList(*category),
+		Refs:       splitList(*ref),
+		Query:      *query,
+		Limit:      *limit,
+		MaxChars:   *maxChars,
+	})
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if result.Text != "" {
+		fmt.Fprintln(out, result.Text)
+	}
+	return 0
+}
+
+// cmdMCP serves the JSON-RPC protocol over stdin/stdout.
+func cmdMCP(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("mcp", out, errOut, &opts)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	a, err := build(opts, io.Discard, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := mcp.NewServer(a).Serve(ctx, os.Stdin, out); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
 	}
 	return 0
 }
@@ -560,6 +624,32 @@ func worktreeValue(raw string) string {
 	return raw
 }
 
+// stringListFlag collects a repeatable flag.
+type stringListFlag struct {
+	values []string
+}
+
+func (f *stringListFlag) String() string { return strings.Join(f.values, ",") }
+
+func (f *stringListFlag) Set(value string) error {
+	f.values = append(f.values, value)
+	return nil
+}
+
+// splitScenarios splits repeatable, comma separated scenario values.
+func splitScenarios(values []string) []string {
+	var out []string
+	for _, value := range values {
+		out = append(out, splitTags(value)...)
+	}
+	return out
+}
+
+// splitList splits a comma separated list.
+func splitList(raw string) []string {
+	return splitTags(raw)
+}
+
 // splitTags splits a comma separated list of keywords.
 func splitTags(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
@@ -592,6 +682,8 @@ Commands:
   pin <title>          protect an entry from automated edits
   unpin <title>        release an entry
   prune-worktrees      remove memories scoped to deleted worktrees
+  recall               memory tree, subtree, refs or ranked query
+  mcp                  serve the MCP tools over stdin/stdout
   log                  the write log, newest first
   index                reconcile the corpus with the native projections
   install              link the tools to the store
@@ -619,8 +711,9 @@ Examples:
   %s add --scope lesson --team --title "Shared rule" --body "..."
   %s pin "Short title"
   %s prune-worktrees
+  %s recall --tree
   %s install
 `, version.Name, version.Name,
 		config.EnvHome, config.EnvVault, config.EnvSource,
-		version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name)
+		version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name)
 }

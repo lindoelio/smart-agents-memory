@@ -20,12 +20,18 @@ flowchart TB
     CLI["Entrypoint<br/>cmd/smart-agents-memory + internal/cli"]
     APP["Use cases<br/>internal/app"]
     DOM["Domain<br/>internal/memory + internal/native"]
+    SCOPE["Domain<br/>internal/gitscope"]
+    TEAM["Team store<br/>internal/teammemory"]
+    SG["Secret scan<br/>internal/secretguard"]
     PORT["Port<br/>internal/vault"]
     REC["Reconciliation<br/>internal/reconcile"]
     PROJ["Local projections<br/>internal/projection"]
 
     CLI --> APP
     APP --> DOM
+    APP --> SCOPE
+    APP --> TEAM
+    APP --> SG
     APP --> PORT
     APP --> REC
     APP --> PROJ
@@ -49,8 +55,8 @@ flowchart TB
 
 The dependency rule is strict:
 
-- `internal/memory` and `internal/native` never import `internal/vault`: the
-  domain knows nothing about where the memory lives.
+- `internal/memory`, `internal/native` and `internal/gitscope` never import
+  `internal/vault`: the domain knows nothing about where the memory lives.
 - `internal/vault` never imports an adapter. A gateway registers itself from
   its `init`, and `cmd/smart-agents-memory` imports it for the side effect.
 - `internal/app` knows the domain and the ports. It is the layer the
@@ -68,6 +74,9 @@ Supporting packages:
 | Package | Responsibility |
 |---|---|
 | `internal/config` | Resolve the store: flag, environment, configuration file, discovery |
+| `internal/gitscope` | Resolve the active Git repository and linked worktree from a directory |
+| `internal/secretguard` | The high-confidence credential scan used by every memory write |
+| `internal/teammemory` | The Git-backed `.agents/memory/` store and its Qwen projection |
 | `internal/reconcile` | Import from the native stores, reconcile the hot tier and export the projections |
 | `internal/projection` | The local directory that holds the native stores, and the watermark of the last projection |
 | `internal/link` | The symlinks of the installation, with the backup of an overwritten file |
@@ -103,6 +112,8 @@ gateways have is a separate optional interface:
 |---|---|---|
 | `Layout` | Creating the store | `obsidian`, `disk`, `sqlite` |
 | `ProjectNotes` | The notes of a project | `obsidian`, `disk`, `sqlite` |
+| `WorktreeNotes` | The notes of a project worktree | `obsidian`, `disk`, `sqlite` |
+| `ProjectNoteLister` / `ProjectNoteRemover` | Listing and deleting project notes | `obsidian`, `disk`, `sqlite` |
 | `Renamer` / `Remover` | Moving and deleting an entry | `obsidian`, `disk`, `sqlite` |
 | `IndexLocator` / `IndexWriter` | Publishing the index | `obsidian`, `disk`, `sqlite` |
 | `Diagnostics` | Notes that could not be read | `obsidian`, `disk` |
@@ -129,6 +140,7 @@ by hand; the full field table lives in
     reference/
     INDEX.md                  the plain index (disk gateway)
   projects/<project>.md
+  projects/<project>@<worktree>.md
   log/YYYY-MM-DD.md
   MEMORY.md                   the hot tier
   native/                     the projections (file gateways)
@@ -140,6 +152,37 @@ the store. The SQLite gateway keeps the corpus in the database and
 materializes `MEMORY.md` and `native/` in the projection root, which is
 `~/.local/share/smart-agents-memory/` by default.
 
+## Project and worktree scope
+
+`internal/gitscope` resolves the repository and the linked worktree from the
+working directory. It reads `.git` and `commondir`; it does not run `git`.
+
+- The **project** is the repository root: a decision is repository-wide.
+- The **worktree** is a linked checkout: a branch-local note is opt-in.
+
+`add --scope project` resolves the project from the current directory.
+`--worktree auto` adds the worktree. `brief` resolves both automatically,
+unless `--global` is passed. The output is the hot tier, the global index,
+`## Project: <slug>` and, when there is one, `## Worktree: <slug>@<id>`.
+
+A worktree that no longer exists leaves entries and notes behind. `doctor`
+reports them; `prune-worktrees --apply` removes the unpinned, cold ones and
+reexports the projections. A pinned or hot entry, and the note of its
+worktree, are kept.
+
+## Team memory
+
+`internal/teammemory` is a second corpus, inside the repository and shared
+through Git. The primary layout is `.agents/memory/`; `.qwen/team-memory/`
+is an optional projection in the Qwen topic format. It is not behind the
+vault port: a team entry belongs to the repository, not to the private
+store, and `add --team` writes only there.
+
+The store refuses a symlink at `.agents`, `.agents/memory`, `.qwen` or
+`.qwen/team-memory`, and skips a symlinked file while reading. Every write
+passes through `internal/secretguard`; the native import does too, so a
+credential in a projection is skipped instead of entering the corpus.
+
 ## Reconciliation
 
 `smart-agents-memory index` keeps the corpus and the native stores in step.
@@ -148,26 +191,31 @@ It runs in this order:
 1. **Import.** The native stores are read. An entry the corpus does not know
    is added. An entry both sides have is resolved by modification time: a
    projection has to be strictly newer than the corpus to replace it, so a
-   manual edit is not reverted by an older projection. A projection this
-   tool wrote is not news: `internal/projection` records the watermark of
-   the last projection in `.smart-agents-memory-state.json`.
+   manual edit is not reverted by an older projection. A pinned entry is
+   never replaced: it is user-curated, and export restores the projection. A
+   projection this tool wrote is not news: `internal/projection` records the
+   watermark of the last projection in `.smart-agents-memory-state.json`.
 2. **The hot tier.** `MEMORY.md` is read before the export. A block edited
    after the last projection is imported when it is newer than the corpus.
-   A freeform block, with no `###` headings, is imported once as a `user`
+   A pinned hot entry is never replaced, like any other pinned entry. A
+   freeform block, with no `###` headings, is imported once as a `user`
    entry titled `Profile`. The frontmatter of `MEMORY.md` is kept, because
    Cursor requires `alwaysApply: true`.
 3. **Export.** The corpus is materialized into the native stores: the hot
    entries go into the injected stores and `MEMORY.md`, the cold entries of
    the MiniMax stores become topic files, and the Qwen files and index are
-   written. A projection is regenerated, never merged. A file whose bytes
-   already match is left alone, so its modification time does not look like
-   a newer edit. A projection that no entry backs is removed.
+   written. A pinned Qwen entry goes under `pinned/<file>.md`. A projection
+   is regenerated, never merged. A file whose bytes already match is left
+   alone, so its modification time does not look like a newer edit. A
+   projection that no entry backs is removed.
 4. **Index.** A gateway that publishes an index does it here: the Obsidian
    gateway writes an Obsidian-native note with wikilinks, and the disk
    gateway writes a plain Markdown index.
 
 Every gateway supplies `Entry.ModTime`: the file modification time, or the
 `updated_at` column of SQLite. Without it, the tie could not be resolved.
+The native formats do not carry the project or worktree, so an import keeps
+the scope already stored in the corpus.
 
 A projection that no corpus entry backs is an orphan. Export removes it and
 `doctor` reports it, because the runtime would inject it without a

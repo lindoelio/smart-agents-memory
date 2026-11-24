@@ -37,7 +37,7 @@ reporting status, it is worth checking:
 |---|---|
 | "how does the user prefer I do X?" | `smart-agents-memory search "<topic>"` |
 | "have we tried this? is there a known trap?" | `smart-agents-memory search "<topic>"` |
-| starting work on a project | `smart-agents-memory brief --project <slug>` |
+| starting work on a project | `smart-agents-memory brief` (auto-detects the repo) |
 | before giving an opinion on scope/deadline | `smart-agents-memory brief` |
 | after learning something durable | `smart-agents-memory add` (see below) |
 
@@ -49,8 +49,9 @@ command, **verify it still exists** before acting.
 
 ```bash
 smart-agents-memory search "neon"           # search the whole corpus
-smart-agents-memory brief                   # profile + index: the basic context
-smart-agents-memory brief --project <slug>  # + project notes
+smart-agents-memory brief                   # profile + index + active repo/worktree
+smart-agents-memory brief --global          # ignore the working directory
+smart-agents-memory brief --project <slug>  # another project
 smart-agents-memory search "flutter" --limit 5
 smart-agents-memory path                    # where the store lives
 ```
@@ -71,11 +72,16 @@ your tool and records it in the write log:
 ```bash
 smart-agents-memory add --scope lesson --title "Short title" --body "Rule... Why..."
 smart-agents-memory add --scope project --title "..." --body "..."
+smart-agents-memory add --scope lesson --team --title "Shared rule" --body "..."
 smart-agents-memory add --scope user --title "..." --body "..." --tier hot
 ```
 
 Scopes: `user` (a fact about the person), `project` (decision/context),
 `lesson` (durable technical lesson), `reference` (external pointer).
+
+Inside a Git repository, `--scope project` resolves the repository slug.
+Use `--worktree auto` only when the fact belongs to the current branch or
+worktree; otherwise the decision is repository-wide.
 
 **Golden rule: always the why.** The why is the body. An empty body is
 rejected. The tool does not judge the prose.
@@ -102,6 +108,43 @@ Every entry has a `tier` in its frontmatter:
 If a new entry is universally true (a permanent working rule), pass
 `--tier hot`. Otherwise leave it `cold`, which is the default. `hot` is
 written into the block every harness reads.
+
+### Pinned: user-curated entries
+
+Some entries are curated by the person and must survive automatic cleanup.
+Record one with `--pinned`, or protect an existing entry:
+
+```bash
+smart-agents-memory pin "Short title"
+smart-agents-memory unpin "Short title"
+```
+
+A pinned entry is never overwritten, renamed or deleted by imports or
+consolidation. In Qwen Code it is projected under `pinned/`, the protected
+directory its background workers cannot modify. Do not pin automatically
+generated memories; pin only what the person explicitly curated.
+
+### Project and worktree scope
+
+`brief` detects the repository and the linked worktree from the working
+directory. Use `--global` to ignore them and `--project <slug>` for another
+repository.
+
+A project decision is repository-wide. A note that only applies to the
+current branch needs `--worktree auto`. When a worktree is removed, `doctor`
+reports the leftovers and `prune-worktrees --apply` removes the unpinned,
+cold ones. A pinned or hot entry, and the note of its worktree, are kept.
+
+### Team memory
+
+`--team` writes a durable, project-wide fact to `.agents/memory/` inside the
+repository. It is committed and shared with every collaborator, so use it for
+conventions and shared references — not for personal or fast-decaying notes.
+`--scope user` is rejected. A detected credential blocks the write.
+
+If `.qwen/team-memory/` exists, the entry is mirrored there for Qwen Code.
+`brief` shows the team store under `## Team Memory (<repo-slug>)`, and
+`search` marks its hits with `[team] `.
 
 ## After writing
 

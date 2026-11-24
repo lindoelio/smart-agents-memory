@@ -130,6 +130,332 @@ func TestAddDoesNotDuplicateTheSameBody(t *testing.T) {
 	t.Fatal("the second write was not recognized")
 }
 
+func TestAddPinnedLandsInTheQwenProtectedDirectory(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A pinned rule", Body: "The rule. Why it matters.",
+		Native: "qwen", Description: "A curated rule", Pinned: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	pinned := filepath.Join(h.root, "native", "qwen", "pinned", "a-pinned-rule.md")
+	if _, err := os.Stat(pinned); err != nil {
+		t.Fatalf("the pinned projection was not written: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(h.root, "native", "qwen", "a-pinned-rule.md")); !os.IsNotExist(err) {
+		t.Fatal("the pinned entry also landed outside pinned/")
+	}
+	index, err := os.ReadFile(filepath.Join(h.root, "native", "qwen", "MEMORY.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(index), "[A pinned rule](pinned/a-pinned-rule.md)") {
+		t.Fatalf("the Qwen index does not point at pinned/:\n%s", index)
+	}
+}
+
+func TestANewerPinnedNativeEditCannotOverwriteTheCorpus(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A pinned rule", Body: "The rule. Why it matters.",
+		Native: "qwen", Pinned: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	pinned := filepath.Join(h.root, "native", "qwen", "pinned", "a-pinned-rule.md")
+	data, err := os.ReadFile(pinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "The rule. Why it matters.", "A native edit that must not win.", 1)
+	if err := os.WriteFile(pinned, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(pinned, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.Contains(entries[0].Body, "The rule. Why it matters.") {
+		t.Fatalf("the pinned corpus entry changed: %+v", entries)
+	}
+	if !entries[0].Pinned {
+		t.Fatal("the entry lost its pinned state")
+	}
+	data, err = os.ReadFile(pinned)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "A native edit") {
+		t.Fatalf("the projection was not restored:\n%s", data)
+	}
+}
+
+func TestANewerHotEditCannotOverwriteAPinnedEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "user", Title: "A pinned identity", Body: "The person.",
+		Tier: "hot", Pinned: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hotPath := filepath.Join(h.root, "MEMORY.md")
+	data, err := os.ReadFile(hotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "The person.", "An edit that must not win.", 1)
+	if err := os.WriteFile(hotPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(hotPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.Contains(entries[0].Body, "The person.") {
+		t.Fatalf("the pinned hot entry changed: %+v", entries)
+	}
+	data, err = os.ReadFile(hotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "An edit that must not win.") {
+		t.Fatalf("the hot block was not restored:\n%s", data)
+	}
+}
+
+func TestAddRefusesToModifyAPinnedEntryWithoutForce(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A pinned rule", Body: "The rule.",
+		Pinned: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A pinned rule", Body: "Another body.",
+	}); err == nil || !strings.Contains(err.Error(), "pinned") {
+		t.Fatalf("the pinned entry was modified without force: %v", err)
+	}
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A pinned rule", Body: "Another body.",
+		Force: true,
+	}); err != nil {
+		t.Fatalf("cannot force an append: %v", err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !entries[0].Pinned {
+		t.Fatalf("the forced append lost the pin: %+v", entries)
+	}
+	if !strings.Contains(entries[0].Body, "The rule.") ||
+		!strings.Contains(entries[0].Body, "Another body.") {
+		t.Fatalf("the forced append did not reach the entry: %q", entries[0].Body)
+	}
+	lines, err := h.app.Log(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "forced on pinned") {
+		t.Fatalf("the log does not record the forced write: %v", lines)
+	}
+}
+
+func TestAddPinnedPinsAnExistingEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A rule", Body: "The rule.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	message, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A rule", Body: "The rule.", Pinned: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(message, "pinned:") {
+		t.Fatalf("the message is %q", message)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !entries[0].Pinned {
+		t.Fatalf("the existing entry was not pinned: %+v", entries)
+	}
+	if strings.Count(entries[0].Body, "The rule.") != 1 {
+		t.Fatalf("the body was duplicated: %q", entries[0].Body)
+	}
+}
+
+func TestPinAndUnpinMoveTheQwenProjection(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A movable rule", Body: "The rule.",
+		Native: "qwen",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	rootFile := filepath.Join(h.root, "native", "qwen", "a-movable-rule.md")
+	pinnedFile := filepath.Join(h.root, "native", "qwen", "pinned", "a-movable-rule.md")
+	if _, err := os.Stat(rootFile); err != nil {
+		t.Fatalf("the root projection was not written: %v", err)
+	}
+
+	message, err := h.app.SetPinned(ctx, "A movable rule", true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(message, "pinned:") {
+		t.Fatalf("the message is %q", message)
+	}
+	if _, err := os.Stat(rootFile); !os.IsNotExist(err) {
+		t.Fatal("pin left the stale root projection")
+	}
+	if _, err := os.Stat(pinnedFile); err != nil {
+		t.Fatalf("pin did not write the protected projection: %v", err)
+	}
+	if message, err := h.app.SetPinned(ctx, "A movable rule", true); err != nil || !strings.HasPrefix(message, "already pinned:") {
+		t.Fatalf("pin is not idempotent: %q %v", message, err)
+	}
+
+	message, err = h.app.SetPinned(ctx, "A movable rule", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(message, "unpinned:") {
+		t.Fatalf("the message is %q", message)
+	}
+	if _, err := os.Stat(pinnedFile); !os.IsNotExist(err) {
+		t.Fatal("unpin left the stale protected projection")
+	}
+	if _, err := os.Stat(rootFile); err != nil {
+		t.Fatalf("unpin did not restore the root projection: %v", err)
+	}
+	lines, err := h.app.Log(ctx, 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	log := strings.Join(lines, "\n")
+	if !strings.Contains(log, "pin | lesson | A movable rule") ||
+		!strings.Contains(log, "unpin | lesson | A movable rule") {
+		t.Fatalf("the write log is missing the transitions: %s", log)
+	}
+}
+
+func TestSetPinnedUpdatesEveryGateway(t *testing.T) {
+	for _, backend := range []string{"obsidian", "disk", "sqlite"} {
+		t.Run(backend, func(t *testing.T) {
+			h := newHarness(t, backend)
+			ctx := context.Background()
+			if layout, ok := h.app.Vault.(vault.Layout); ok {
+				if err := layout.Ensure(ctx); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			if _, err := h.app.Add(ctx, app.AddOptions{
+				Scope: "lesson", Title: "A rule", Body: "The rule.",
+			}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := h.app.SetPinned(ctx, "A rule", true); err != nil {
+				t.Fatal(err)
+			}
+			entries, err := h.app.Vault.Entries(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || !entries[0].Pinned {
+				t.Fatalf("%s: the pin was not stored: %+v", backend, entries)
+			}
+			if _, err := h.app.SetPinned(ctx, "A rule", false); err != nil {
+				t.Fatal(err)
+			}
+			entries, err = h.app.Vault.Entries(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 || entries[0].Pinned {
+				t.Fatalf("%s: the unpin was not stored: %+v", backend, entries)
+			}
+		})
+	}
+}
+
+func TestAPinnedNativeFileBecomesAPinnedCorpusEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	pinned := filepath.Join(h.root, "native", "qwen", "pinned", "manual.md")
+	if err := os.MkdirAll(filepath.Dir(pinned), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := "---\nname: A manual pinned rule\ndescription: Curated by hand.\ntype: reference\ncategory: shared_memory\n---\n\nThe body.\n"
+	if err := os.WriteFile(pinned, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Title != "A manual pinned rule" || !entries[0].Pinned {
+		t.Fatalf("the pinned projection was not imported as pinned: %+v", entries)
+	}
+}
+
+func TestUnpinRefusesAPathPinnedEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+
+	path := filepath.Join(h.root, "corpus", "pinned", "a-curated-rule.md")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	note := "---\ntitle: \"A curated rule\"\ntype: lesson\ndate: 2026-11-07\n---\n\n## A curated rule\n\nBody.\n"
+	if err := os.WriteFile(path, []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.SetPinned(ctx, "A curated rule", false); err == nil || !strings.Contains(err.Error(), "pinned by its path") {
+		t.Fatalf("the path-pinned entry was unpinned: %v", err)
+	}
+}
+
 func TestTheEnglishWarningDoesNotBlock(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	ctx := context.Background()
@@ -433,6 +759,573 @@ func TestDoctorFindsABrokenLink(t *testing.T) {
 	}
 }
 
+func TestAddTeamWritesTheSharedStore(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	slug := memory.Slugify("repo")
+
+	message, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A shared rule", Body: "The rule. Why it matters.",
+		Native: "qwen", Team: true, CWD: repo,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(message, "recorded (team):") {
+		t.Fatalf("the message is %q", message)
+	}
+	primary := filepath.Join(repo, ".agents", "memory", "corpus", "lesson", "a-shared-rule.md")
+	data, err := os.ReadFile(primary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "project: "+slug) {
+		t.Fatalf("the team note has no project:\n%s", data)
+	}
+	if _, err := os.Stat(filepath.Join(repo, ".qwen", "team-memory", "lesson", "a-shared-rule.md")); err != nil {
+		t.Fatalf("the Qwen projection was not written: %v", err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the team write entered the private vault: %+v", entries)
+	}
+}
+
+func TestAddTeamRejectsUserScope(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Add(context.Background(), app.AddOptions{
+		Scope: "user", Title: "A person", Body: "The person.", Team: true, CWD: newRepo(t),
+	})
+	if err == nil || !strings.Contains(err.Error(), "personal user profile") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestAddTeamRequiresAGitRepository(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Add(context.Background(), app.AddOptions{
+		Scope: "lesson", Title: "A rule", Body: "The rule.", Team: true, CWD: t.TempDir(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "git repository") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestAddRejectsASecret(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Add(context.Background(), app.AddOptions{
+		Scope: "lesson", Title: "A leaked key", Body: "ghp_" + strings.Repeat("a", 36),
+	})
+	if err == nil || !strings.Contains(err.Error(), "GitHub PAT") {
+		t.Fatalf("the secret was accepted: %v", err)
+	}
+	entries, err := h.app.Vault.Entries(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the secret entered the corpus: %+v", entries)
+	}
+}
+
+func TestBriefCarriesTheTeamMemory(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A shared rule", Body: "The shared body.",
+		Team: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, err := h.app.Brief(ctx, app.BriefOptions{CWD: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "## Team Memory ("+memory.Slugify("repo")+")") ||
+		!strings.Contains(text, "The shared body.") {
+		t.Fatalf("the brief does not carry team memory:\n%s", text)
+	}
+}
+
+func TestSearchFindsTheTeamEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A shared rule", Body: "The shared body.",
+		Team: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(repo)
+	hits, err := h.app.Search(ctx, "shared", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	found := false
+	for _, hit := range hits {
+		if strings.HasPrefix(hit.Path, "[team] ") && strings.Contains(hit.Text, "shared") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the team hit is missing: %+v", hits)
+	}
+}
+
+func TestTheNativeImportSkipsASecret(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	topic := native.RenderTopic(memory.Entry{
+		Title: "A leaked native lesson", Type: memory.TypeLesson,
+		Body: "ghp_" + strings.Repeat("a", 36), Description: "A leaked lesson",
+	})
+	if err := h.app.Projections.Write(native.TargetMiniMaxAgent, "topics/leaked.md", topic); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	path := filepath.Join(h.root, "native", "minimax-agent", "topics", "leaked.md")
+	if err := os.Chtimes(path, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the secret was imported: %+v", entries)
+	}
+	if !strings.Contains(h.err.String(), "skipped native entry") {
+		t.Fatalf("the import was not reported: %q", h.err.String())
+	}
+}
+
+func TestAHotNativeEditWithASecretIsSkipped(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "user", Title: "Identity", Body: "The person.", Tier: "hot",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	hotPath := filepath.Join(h.root, "MEMORY.md")
+	data, err := os.ReadFile(hotPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	edited := strings.Replace(string(data), "The person.", "ghp_"+strings.Repeat("a", 36), 1)
+	if err := os.WriteFile(hotPath, []byte(edited), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	future := time.Now().Add(2 * time.Second)
+	if err := os.Chtimes(hotPath, future, future); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || !strings.Contains(entries[0].Body, "The person.") {
+		t.Fatalf("the secret entered the hot entry: %+v", entries)
+	}
+	if !strings.Contains(h.err.String(), "skipped native hot entry") {
+		t.Fatalf("the hot import was not reported: %q", h.err.String())
+	}
+}
+
+func TestAddAutoDetectsTheRepositoryScope(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A project decision", Body: "The decision.",
+		CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the corpus has %d entries", len(entries))
+	}
+	if entries[0].Project != memory.Slugify("repo") || entries[0].Worktree != "" {
+		t.Fatalf("the auto scope is %q@%q", entries[0].Project, entries[0].Worktree)
+	}
+}
+
+func TestAddAutoDetectsTheWorktreeScope(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	worktree := newLinkedWorktree(t, repo, "feature")
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A branch decision", Body: "The branch decision.",
+		WorktreeAuto: true, CWD: worktree,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Project != memory.Slugify("repo") || entries[0].Worktree != "feature" {
+		t.Fatalf("the auto scope is %+v", entries)
+	}
+}
+
+func TestAddRejectsProjectScopeOutsideAGitRepository(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Add(context.Background(), app.AddOptions{
+		Scope: "project", Title: "A decision", Body: "The decision.",
+		CWD: t.TempDir(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "git repository") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestAddRejectsAnUnsafeProjectSlug(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Add(context.Background(), app.AddOptions{
+		Scope: "project", Title: "A decision", Body: "The decision.",
+		Project: "../outside",
+	})
+	if err == nil || !strings.Contains(err.Error(), "invalid project slug") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestBriefScopesTheProjectAndWorktreeEntries(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	worktree := newLinkedWorktree(t, repo, "feature")
+	slug := memory.Slugify("repo")
+
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Global rule", Body: "global body",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "Project decision", Body: "project body", Project: slug,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "Worktree decision", Body: "worktree body",
+		Project: slug, Worktree: "feature",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	text, err := h.app.Brief(ctx, app.BriefOptions{CWD: worktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	project := strings.Index(text, "## Project:")
+	projectBody := strings.Index(text, "project body")
+	worktreeSection := strings.Index(text, "## Worktree:")
+	worktreeBody := strings.Index(text, "worktree body")
+	if project < 0 || worktreeSection < 0 {
+		t.Fatalf("the brief is missing a section:\n%s", text)
+	}
+	if !(project < projectBody && projectBody < worktreeSection && worktreeSection < worktreeBody) {
+		t.Fatalf("the scopes are out of order:\n%s", text)
+	}
+	if strings.Contains(text[worktreeSection:], "project body") {
+		t.Fatalf("the project body leaked into the worktree section:\n%s", text)
+	}
+}
+
+func TestBriefAutoDetectionDoesNotWarnAboutAMissingNote(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	slug := memory.Slugify("repo")
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A project decision", Body: "The decision.", Project: slug,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Brief(ctx, app.BriefOptions{CWD: repo}); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(h.err.String(), "not found") {
+		t.Fatalf("auto-detection warned about the missing note: %q", h.err.String())
+	}
+}
+
+func TestBriefExplicitProjectStillWarns(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Brief(context.Background(), app.BriefOptions{
+		Project: "missing", ProjectExplicit: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(h.err.String(), "project 'missing' not found") {
+		t.Fatalf("the explicit project did not warn: %q", h.err.String())
+	}
+}
+
+func TestBriefGlobalSkipsAutoDetection(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A project decision", Body: "The decision.",
+		Project: memory.Slugify("repo"),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, err := h.app.Brief(ctx, app.BriefOptions{Global: true, CWD: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(text, "## Project:") || strings.Contains(text, "## Worktree:") {
+		t.Fatalf("--global still scoped the brief:\n%s", text)
+	}
+}
+
+func TestDoctorReportsAStaleWorktreeAndItsNote(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	newLinkedWorktree(t, repo, "feature")
+	slug := memory.Slugify("repo")
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A branch decision", Body: "The decision.",
+		Project: slug, Worktree: "feature",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(h.root, "projects")
+	if err := os.MkdirAll(notes, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(notes, slug+"@feature.md"), []byte("branch note"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "worktrees", "feature")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(repo)
+
+	report, err := h.app.Doctor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	problems := strings.Join(report.Problems, "\n")
+	if !strings.Contains(problems, "stale worktree: "+slug+"@feature") {
+		t.Fatalf("the stale entry was not reported: %v", report.Problems)
+	}
+	if !strings.Contains(problems, "stale worktree note: "+slug+"@feature") {
+		t.Fatalf("the stale note was not reported: %v", report.Problems)
+	}
+}
+
+func TestPruneWorktreesDryRunKeepsEverything(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	newLinkedWorktree(t, repo, "feature")
+	slug := memory.Slugify("repo")
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A branch decision", Body: "The decision.",
+		Project: slug, Worktree: "feature",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(h.root, "projects", slug+"@feature.md")
+	if err := os.MkdirAll(filepath.Dir(note), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(note, []byte("branch note"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "worktrees", "feature")); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := h.app.PruneWorktrees(ctx, app.PruneWorktreesOptions{CWD: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 || len(report.Notes) != 1 {
+		t.Fatalf("the dry run reported %+v", report)
+	}
+	if _, err := os.Stat(note); err != nil {
+		t.Fatalf("the dry run removed the note: %v", err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("the dry run removed the entry: %+v", entries)
+	}
+}
+
+func TestPruneWorktreesApplyRemovesEntriesAndNotes(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	newLinkedWorktree(t, repo, "feature")
+	slug := memory.Slugify("repo")
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A branch decision", Body: "The decision.",
+		Project: slug, Worktree: "feature",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	note := filepath.Join(h.root, "projects", slug+"@feature.md")
+	if err := os.MkdirAll(filepath.Dir(note), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(note, []byte("branch note"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	topic := filepath.Join(h.root, "native", "minimax-agent", "topics", memory.ASCIISlug("A branch decision")+".md")
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "worktrees", "feature")); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := h.app.PruneWorktrees(ctx, app.PruneWorktreesOptions{CWD: repo, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 1 || len(report.Notes) != 1 {
+		t.Fatalf("the prune reported %+v", report)
+	}
+	if _, err := os.Stat(note); !os.IsNotExist(err) {
+		t.Fatal("the worktree note survived")
+	}
+	if _, err := os.Stat(topic); !os.IsNotExist(err) {
+		t.Fatal("the projection survived")
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("the entry survived or was reimported: %+v", entries)
+	}
+	lines, err := h.app.Log(ctx, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(lines, "\n"), "prune-worktrees | entries=1 notes=1") {
+		t.Fatalf("the prune was not logged: %v", lines)
+	}
+}
+
+func TestPruneWorktreesNeverRemovesPinnedOrHot(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	newLinkedWorktree(t, repo, "feature")
+	slug := memory.Slugify("repo")
+	for _, entry := range []app.AddOptions{
+		{Scope: "project", Title: "A pinned branch decision", Body: "The decision.", Project: slug, Worktree: "feature", Pinned: true},
+		{Scope: "user", Title: "A hot branch decision", Body: "The decision.", Project: slug, Worktree: "feature", Tier: "hot"},
+	} {
+		if _, err := h.app.Add(ctx, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	note := filepath.Join(h.root, "projects", slug+"@feature.md")
+	if err := os.MkdirAll(filepath.Dir(note), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(note, []byte("branch note"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(filepath.Join(repo, ".git", "worktrees", "feature")); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := h.app.PruneWorktrees(ctx, app.PruneWorktreesOptions{CWD: repo, Apply: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(report.Entries) != 0 || len(report.Protected) != 2 || len(report.ProtectedNotes) != 1 {
+		t.Fatalf("the protected entries were not reported: %+v", report)
+	}
+	if _, err := os.Stat(note); err != nil {
+		t.Fatalf("the note of a protected scope was removed: %v", err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("a protected entry was removed: %+v", entries)
+	}
+}
+
+func TestPruneWorktreesRequiresAGitRepository(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.PruneWorktrees(context.Background(), app.PruneWorktreesOptions{
+		CWD: t.TempDir(), Apply: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "git repository") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestPruneWorktreesRefusesWithoutRemovalCapabilities(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	repo := newRepo(t)
+	slug := memory.Slugify("repo")
+	h.app.Vault = noRemovalVault{entries: []memory.Entry{{
+		Title: "A branch decision", Type: memory.TypeProject, Project: slug, Worktree: "feature",
+	}}}
+	_, err := h.app.PruneWorktrees(context.Background(), app.PruneWorktreesOptions{
+		CWD: repo, Apply: true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot remove entries") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+func TestBriefCarriesTheWorktreeNotes(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	worktree := newLinkedWorktree(t, repo, "feature")
+	slug := memory.Slugify("repo")
+	dir := filepath.Join(h.root, "projects")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, slug+"@feature.md"), []byte("# Feature\n\nThe worktree notes.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	text, err := h.app.Brief(ctx, app.BriefOptions{CWD: worktree})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "## Worktree: "+slug+"@feature") || !strings.Contains(text, "The worktree notes.") {
+		t.Fatalf("the brief does not carry the worktree notes: %q", text)
+	}
+}
+
 func TestBriefCarriesTheHotTier(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	ctx := context.Background()
@@ -441,7 +1334,7 @@ func TestBriefCarriesTheHotTier(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(h.root, "MEMORY.md"), []byte(hot), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	text, err := h.app.Brief(ctx, "", "", 20)
+	text, err := h.app.Brief(ctx, app.BriefOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -464,7 +1357,7 @@ func TestBriefCarriesTheProjectNotes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "demo.md"), []byte("# Demo\n\nThe project notes.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	text, err := h.app.Brief(ctx, "demo", "", 20)
+	text, err := h.app.Brief(ctx, app.BriefOptions{Project: "demo", ProjectExplicit: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -779,7 +1672,7 @@ func TestBriefListsTheCorpus(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	text, err := h.app.Brief(ctx, "", "", 20)
+	text, err := h.app.Brief(ctx, app.BriefOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -794,7 +1687,7 @@ func TestBriefListsTheCorpus(t *testing.T) {
 func TestAGatewayWithoutProjectNotesSaysSo(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	h.app.Vault = bareVault{}
-	_, err := h.app.Brief(context.Background(), "my-app", "", 20)
+	_, err := h.app.Brief(context.Background(), app.BriefOptions{Project: "my-app", ProjectExplicit: true})
 	if err == nil || !strings.Contains(err.Error(), "does not keep project notes") {
 		t.Fatalf("the error is %v", err)
 	}
@@ -847,6 +1740,37 @@ func TestAnUnreadableNoteIsReported(t *testing.T) {
 	}
 }
 
+// newRepo builds a minimal standard checkout in a temporary directory.
+func newRepo(t *testing.T) string {
+	t.Helper()
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return repo
+}
+
+// newLinkedWorktree registers a linked worktree under repo and builds the
+// worktree's .git file.
+func newLinkedWorktree(t *testing.T, repo, name string) string {
+	t.Helper()
+	worktree := filepath.Join(t.TempDir(), name)
+	gitDir := filepath.Join(repo, ".git", "worktrees", name)
+	if err := os.MkdirAll(gitDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(worktree, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gitDir, "commondir"), []byte("../..\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(worktree, ".git"), []byte("gitdir: "+gitDir+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return worktree
+}
+
 func countTitle(t *testing.T, h *harness, title string) int {
 	t.Helper()
 	entries, err := h.app.Vault.Entries(context.Background())
@@ -878,3 +1802,13 @@ func (bareVault) Search(context.Context, string, int) ([]vault.Hit, error) {
 func (bareVault) AppendLog(context.Context, string) error         { return nil }
 func (bareVault) LogLines(context.Context, int) ([]string, error) { return nil, nil }
 func (bareVault) Ready(context.Context) error                     { return nil }
+
+// noRemovalVault is a corpus without the optional removal capabilities.
+type noRemovalVault struct {
+	bareVault
+	entries []memory.Entry
+}
+
+func (v noRemovalVault) Entries(context.Context) ([]memory.Entry, error) {
+	return v.entries, nil
+}

@@ -17,15 +17,20 @@ local projections.
 
 ### `search <query> [--limit N]`
 
-Searches the corpus, the project notes and the hot tier. The query is a
-regular expression when it compiles, and a case-insensitive substring match
-otherwise. Output is `path:line: text`.
+Searches the corpus, the project notes and the hot tier. When inside a Git
+repository it also searches team memory; those hits are marked `[team] `.
+The query is a regular expression when it compiles, and a case-insensitive
+substring match otherwise. Output is `path:line: text`.
 
-### `brief [--project <slug>] [--query Q] [--limit N]`
+### `brief [--project <slug>] [--worktree <id>] [--global] [--query Q] [--limit N]`
 
-Prints the hot tier and the index of the corpus (type, title, description),
-without the bodies. `--project` adds the notes of a project. A gateway that
-does not keep project notes says so. With `--query` it also runs the search.
+Prints the hot tier and the index of the corpus (type, title, description);
+the index does not carry cold bodies. It also detects the repository and
+linked worktree from the working directory and prints `## Project` and
+`## Worktree` sections with the bodies of the scoped entries. Inside a Git
+repository it adds `## Team Memory (<repo-slug>)`. `--project` adds the
+notes of another project; `--global` disables auto-detection, including the
+team section. With `--query` it also runs the search.
 
 ### `add --scope <type> --title <title> --body <body>`
 
@@ -39,18 +44,50 @@ Records one durable memory.
 | `--source` | Where the entry came from (default `smart-agents-memory-cli`) |
 | `--native` | `minimax-user`, `minimax-agent`, `qwen` — where to project it |
 | `--tier` | `hot` or `cold` (default `cold`). `hot` enters every session |
+| `--pinned` | Protect the entry from automated edits, imports and consolidation |
+| `--project` | Repository or project slug; auto-detected for `--scope project` |
+| `--worktree` | Worktree id, or `auto` to use the current linked worktree |
+| `--team` | Write to the Git-backed `.agents/memory/` instead of the private vault |
 | `--description` | The one line a runtime injects for a cold entry |
 | `--reason` | Why the entry was recorded, stored beside the body |
 | `--tags` | Keywords, written to the frontmatter |
 | `--force` | Write even when the title already exists |
 | `--allow-other-language` | Skip the English-default warning |
 
+`--team` requires a Git repository and rejects `--scope user`; team memory
+cannot hold a personal profile entry. It writes `.agents/memory/` and, when
+the Qwen team directory exists or `--native qwen` is passed, mirrors the
+entry into `.qwen/team-memory/`. A detected credential blocks the write.
+
 When the title already exists, the body is appended to the entry instead of
-creating a second one.
+creating a second one. A pinned entry refuses the append unless `--force` is
+passed; a forced append keeps the pin and records `forced on pinned` in the
+write log. `--pinned=false` does not release an entry: use `unpin`.
+
+### `pin <title>`
+
+Protects an existing entry from automated edits, imports and consolidation.
+The corpus keeps the note where it is; the Qwen projection moves to
+`native/qwen/pinned/<file>.md`. The write log records
+`pin | <type> | <title>`.
+
+### `unpin <title>`
+
+Releases an entry. The Qwen projection moves back to the root and the write
+log records `unpin | <type> | <title>`. An entry physically stored under a
+`pinned/` directory must be moved out of that folder first.
 
 ### `log [--limit N]`
 
 Prints the write log, newest first.
+
+### `prune-worktrees [--apply]`
+
+Lists the memories scoped to a worktree that is no longer registered in the
+current repository. Without `--apply` it only reports. With `--apply` it
+removes the unpinned, cold entries and their project notes, then reexports
+the projections. Pinned and hot entries are reported as protected and are
+never removed; a note whose worktree still has a protected entry is kept too.
 
 ### `index`
 

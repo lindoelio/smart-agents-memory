@@ -18,6 +18,7 @@ import (
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/projection"
 	"github.com/lindoelio/smart-agents-memory/internal/reconcile"
+	"github.com/lindoelio/smart-agents-memory/internal/secretguard"
 	"github.com/lindoelio/smart-agents-memory/internal/vault"
 )
 
@@ -66,7 +67,7 @@ func (a *App) RequireStore(ctx context.Context) error {
 
 // Reconciler builds the reconciler of this application.
 func (a *App) Reconciler() *reconcile.Reconciler {
-	return &reconcile.Reconciler{Vault: a.Vault, Projections: a.Projections}
+	return &reconcile.Reconciler{Vault: a.Vault, Projections: a.Projections, Warn: a.Err}
 }
 
 // Path is the root of the store.
@@ -89,13 +90,61 @@ func (a *App) Search(ctx context.Context, query string, limit int) ([]vault.Hit,
 	if strings.TrimSpace(query) == "" {
 		return nil, fmt.Errorf("empty query")
 	}
-	return a.Vault.Search(ctx, query, limit)
+	hits, err := a.Vault.Search(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	team, err := a.teamSearch(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	hits = append(hits, team...)
+	if limit > 0 && len(hits) > limit {
+		hits = hits[:limit]
+	}
+	return hits, nil
+}
+
+// BriefOptions selects the context package.
+type BriefOptions struct {
+	// Project is the repository or project slug.
+	Project string
+	// Worktree is the linked worktree identifier.
+	Worktree string
+	// Global disables repository auto-detection.
+	Global bool
+	// ProjectExplicit reports whether --project was passed by the user.
+	ProjectExplicit bool
+	// CWD is where the scope is resolved; empty means the process directory.
+	CWD string
 }
 
 // Brief builds the context package: the hot tier, the index of the corpus,
-// and the notes of a project when asked. A query is searched by the command,
-// so the bodies of cold entries stay out of this text.
-func (a *App) Brief(ctx context.Context, project, _ string, _ int) (string, error) {
+// the project scope and the worktree scope. Cold bodies only enter the text
+// for the entries explicitly scoped to the active project or worktree.
+func (a *App) Brief(ctx context.Context, opts BriefOptions) (string, error) {
+	project := strings.TrimSpace(opts.Project)
+	worktree := strings.TrimSpace(opts.Worktree)
+	explicit := opts.ProjectExplicit || project != ""
+
+	if project == "" && !opts.Global {
+		if info, ok := resolveScopeCWD(opts.CWD); ok {
+			project = info.RepoSlug
+			if worktree == "" {
+				worktree = info.WorktreeID
+			}
+		}
+	}
+	if project != "" && !validScopeName(project) {
+		return "", fmt.Errorf("invalid project slug %q", project)
+	}
+	if worktree != "" && !validScopeName(worktree) {
+		return "", fmt.Errorf("invalid worktree id %q", worktree)
+	}
+	if worktree != "" && project == "" {
+		return "", fmt.Errorf("a worktree needs a project; pass --project or run inside a git repository")
+	}
+
 	var parts []string
 	if hot := stripFrontmatter(a.HotContent()); strings.TrimSpace(hot) != "" {
 		parts = append(parts, strings.TrimRight(hot, "\n"))
@@ -107,6 +156,7 @@ func (a *App) Brief(ctx context.Context, project, _ string, _ int) (string, erro
 	if index := renderBriefIndex(corpus); index != "" {
 		parts = append(parts, index)
 	}
+
 	if project != "" {
 		holder, ok := a.Vault.(vault.ProjectNotes)
 		if !ok {
@@ -116,13 +166,87 @@ func (a *App) Brief(ctx context.Context, project, _ string, _ int) (string, erro
 		if err != nil {
 			return "", err
 		}
-		if found {
-			parts = append(parts, fmt.Sprintf("\n## Project: %s\n\n%s", project, strings.TrimSpace(notes)))
-		} else {
+		entries := scopedEntries(corpus, project, "")
+		if found || len(entries) > 0 {
+			section := "\n## Project: " + project
+			if found && strings.TrimSpace(notes) != "" {
+				section += "\n\n" + strings.TrimSpace(notes)
+			}
+			section += renderScopedEntries(entries)
+			parts = append(parts, section)
+		} else if explicit {
 			fmt.Fprintf(a.Err, "project '%s' not found\n", project)
 		}
 	}
+
+	if worktree != "" {
+		holder, ok := a.Vault.(vault.WorktreeNotes)
+		if !ok {
+			return "", fmt.Errorf("the %s gateway does not keep worktree notes", a.Vault.Kind())
+		}
+		notes, found, err := holder.WorktreeNote(ctx, project, worktree)
+		if err != nil {
+			return "", err
+		}
+		entries := scopedEntries(corpus, project, worktree)
+		if found || len(entries) > 0 {
+			section := "\n## Worktree: " + project + "@" + worktree
+			if found && strings.TrimSpace(notes) != "" {
+				section += "\n\n" + strings.TrimSpace(notes)
+			}
+			section += renderScopedEntries(entries)
+			parts = append(parts, section)
+		}
+	}
+
+	if !opts.Global {
+		team, info, ok, err := a.teamEntries(ctx, opts.CWD)
+		if err != nil {
+			return "", err
+		}
+		if ok && len(team) > 0 {
+			parts = append(parts, "\n## Team Memory ("+info+")"+renderEntries(team))
+		}
+	}
+
 	return strings.Join(parts, "\n"), nil
+}
+
+// scopedEntries returns the cold entries of one project or worktree.
+func scopedEntries(corpus []memory.Entry, project, worktree string) []memory.Entry {
+	var out []memory.Entry
+	for _, e := range corpus {
+		if e.EffectiveTier() == memory.TierHot {
+			continue
+		}
+		if e.Project != project || e.Worktree != worktree {
+			continue
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
+// renderScopedEntries writes the title and body of each scoped entry.
+func renderScopedEntries(entries []memory.Entry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString("\n### " + e.Title + "\n\n")
+		b.WriteString(strings.TrimSpace(e.Body))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// renderEntries writes the title and body of each team entry.
+func renderEntries(entries []memory.Entry) string {
+	var b strings.Builder
+	for _, e := range entries {
+		b.WriteString("\n### " + e.Title + "\n\n")
+		b.WriteString(strings.TrimSpace(e.Body))
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // renderBriefIndex lists the corpus without the bodies. The hot tier is
@@ -160,6 +284,17 @@ func renderBriefIndex(corpus []memory.Entry) string {
 	return strings.TrimRight(b.String(), "\n")
 }
 
+// warnEnglish keeps the corpus in English by default. It only warns; the
+// write is never blocked.
+func (a *App) warnEnglish(body string, allow bool) {
+	if allow || memory.IsEnglish(body) {
+		return
+	}
+	fmt.Fprintln(a.Err,
+		"warning: the corpus is written in English by default. "+
+			"Pass --allow-other-language if this entry must keep another language.")
+}
+
 // AddOptions are the options of a write.
 type AddOptions struct {
 	// Scope is the type of the entry.
@@ -174,6 +309,18 @@ type AddOptions struct {
 	Native string
 	// Tier is hot for what is always true, cold for the rest.
 	Tier string
+	// Pinned protects the entry from automated edits and imports.
+	Pinned bool
+	// Project is the repository or project slug for the entry.
+	Project string
+	// Worktree is the linked worktree identifier for the entry.
+	Worktree string
+	// WorktreeAuto resolves the worktree from CWD.
+	WorktreeAuto bool
+	// CWD is where the scope is resolved; empty means the process directory.
+	CWD string
+	// Team writes to the Git-backed team store instead of the private vault.
+	Team bool
 	// Description is the one line a runtime injects for a cold entry.
 	Description string
 	// Reason is why an entry was appended to the profile.
@@ -199,6 +346,9 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 	if body == "" {
 		return "", fmt.Errorf("empty body")
 	}
+	if err := secretguard.Check(opts.Title, body); err != nil {
+		return "", err
+	}
 	source := opts.Source
 	if source == "" {
 		source = os.Getenv(config.EnvSource)
@@ -220,15 +370,17 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 	if tier != memory.TierHot && tier != memory.TierCold {
 		return "", fmt.Errorf("invalid tier %q (use hot, cold)", opts.Tier)
 	}
+	if opts.Team {
+		return a.addTeam(ctx, opts, scope, source, native, tier)
+	}
+	if err := a.resolveAddScope(&opts, scope); err != nil {
+		return "", err
+	}
 
 	// The corpus is written in English by default. A body in another
 	// language is only right when the user asked for it, or when the entry
 	// quotes something that has to stay verbatim.
-	if !opts.AllowOtherLanguage && !memory.IsEnglish(body) {
-		fmt.Fprintln(a.Err,
-			"warning: the corpus is written in English by default. "+
-				"Pass --allow-other-language if this entry must keep another language.")
-	}
+	a.warnEnglish(body, opts.AllowOtherLanguage)
 
 	corpus, err := a.Vault.Entries(ctx)
 	if err != nil {
@@ -238,7 +390,24 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 		if memory.NormTitle(e.Title) != memory.NormTitle(opts.Title) {
 			continue
 		}
+		if e.Pinned && !opts.Force {
+			return "", fmt.Errorf("entry %q is pinned; pass --force to modify it", e.Title)
+		}
+		wasPinned := e.Pinned
 		if strings.Contains(e.Body, body) && !opts.Force {
+			if opts.Pinned && !e.Pinned {
+				e.Pinned = true
+				if err := a.Vault.Update(ctx, e); err != nil {
+					return "", err
+				}
+				if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s (pinned)", scope, e.Title, source)); err != nil {
+					return "", err
+				}
+				if _, err := a.Index(ctx); err != nil {
+					return "", err
+				}
+				return "pinned: " + e.Path, nil
+			}
 			return "already recorded (no change): " + e.Title, nil
 		}
 		e.Body = strings.TrimRight(e.Body, "\n") + "\n\n" + body
@@ -251,10 +420,25 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 		if opts.Tier != "" {
 			e.Tier = tier
 		}
+		// A pinned entry stays pinned unless an explicit command unpins
+		// it. --pinned can add protection, never remove it.
+		if opts.Pinned {
+			e.Pinned = true
+		}
+		if opts.Project != "" && e.Project == "" {
+			e.Project = opts.Project
+		}
+		if opts.Worktree != "" && e.Worktree == "" {
+			e.Worktree = opts.Worktree
+		}
 		if err := a.Vault.Update(ctx, e); err != nil {
 			return "", err
 		}
-		if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s (append)", scope, e.Title, source)); err != nil {
+		suffix := " (append)"
+		if wasPinned {
+			suffix = " (append, forced on pinned)"
+		}
+		if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s%s", scope, e.Title, source, suffix)); err != nil {
 			return "", err
 		}
 		if _, err := a.Index(ctx); err != nil {
@@ -271,6 +455,9 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 		Native:      native,
 		NativeType:  scope.NativeType(),
 		Tier:        tier,
+		Pinned:      opts.Pinned,
+		Project:     opts.Project,
+		Worktree:    opts.Worktree,
 		Description: opts.Description,
 		Reason:      opts.Reason,
 		Keywords:    opts.Tags,
@@ -287,6 +474,70 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 		return "", err
 	}
 	return "recorded: " + stored.Path, nil
+}
+
+// SetPinned protects or releases one entry. The corpus owns the state; the
+// projections follow it on the next index.
+func (a *App) SetPinned(ctx context.Context, title string, pinned bool) (string, error) {
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return "", fmt.Errorf("empty title")
+	}
+	corpus, err := a.Vault.Entries(ctx)
+	if err != nil {
+		return "", err
+	}
+	key := memory.NormTitle(title)
+	var matches []memory.Entry
+	for _, e := range corpus {
+		if memory.NormTitle(e.Title) == key {
+			matches = append(matches, e)
+		}
+	}
+	if len(matches) == 0 {
+		return "", fmt.Errorf("entry %q not found", title)
+	}
+	if len(matches) > 1 {
+		return "", fmt.Errorf("more than one entry is titled %q", title)
+	}
+	entry := matches[0]
+	if !pinned && hasPinnedPath(entry.Path) {
+		return "", fmt.Errorf("entry %q is pinned by its path; move it out of pinned/ before unpinning", entry.Title)
+	}
+	state := "pinned"
+	if !pinned {
+		state = "unpinned"
+	}
+	if entry.Pinned == pinned {
+		return "already " + state + ": " + entry.Path, nil
+	}
+	entry.Pinned = pinned
+	if err := a.Vault.Update(ctx, entry); err != nil {
+		return "", err
+	}
+	action := "pin"
+	if !pinned {
+		action = "unpin"
+	}
+	if err := a.Vault.AppendLog(ctx, fmt.Sprintf("%s | %s | %s", action, entry.Type, entry.Title)); err != nil {
+		return "", err
+	}
+	if _, err := a.Index(ctx); err != nil {
+		return "", err
+	}
+	return state + ": " + entry.Path, nil
+}
+
+// hasPinnedPath reports whether a corpus path is physically under a pinned
+// directory. Such a note is pinned by location, so unpinning it requires
+// moving it first.
+func hasPinnedPath(path string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(path), "/") {
+		if strings.EqualFold(segment, "pinned") {
+			return true
+		}
+	}
+	return false
 }
 
 // Log returns the write log, newest first.

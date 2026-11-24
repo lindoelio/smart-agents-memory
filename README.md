@@ -80,15 +80,30 @@ The store is a folder of Markdown notes. Put it inside your Obsidian vault
 if you want to read and edit the memory by hand, or point it at a SQLite
 database if you prefer a single file.
 
+Inside a Git repository, `add --team` writes to `.agents/memory/`, committed
+and shared with the team. `brief` shows it under
+`## Team Memory (<repo-slug>)`, and `search` marks its hits with `[team] `.
+If `.gitignore` excludes `.agents`, re-include `.agents/memory/`.
+
 ## Use it
 
 ```bash
 smart-agents-memory search "neon"           # find something
-smart-agents-memory brief                   # the hot tier and the index
+smart-agents-memory brief                   # the hot tier, the active repo/worktree
+smart-agents-memory brief --global          # ignore the working directory
 smart-agents-memory brief --project my-app  # + the notes of a project
 smart-agents-memory add --scope lesson \
   --title "Short title" \
   --body "Rule... Why..."                   # record something durable
+smart-agents-memory add --scope project \
+  --title "Project decision" --body "..."   # scoped to the current repo
+smart-agents-memory add --scope project --worktree auto \
+  --title "Branch decision" --body "..."    # scoped to the current worktree
+smart-agents-memory add --scope lesson --team \
+  --title "Shared rule" --body "..."        # committed in .agents/memory/
+smart-agents-memory pin "Short title"       # protect a curated entry
+smart-agents-memory unpin "Short title"     # release it again
+smart-agents-memory prune-worktrees         # report scopes of deleted worktrees
 smart-agents-memory log                     # what was recorded, and by whom
 smart-agents-memory index                   # reconcile corpus <-> projections
 smart-agents-memory doctor                  # check the installation
@@ -151,6 +166,14 @@ minimum. See [the integrations reference](skills/smart-agents-memory/references/
   to that person stay in their own language.
 - **Hot and cold.** `hot` enters every session — the profile and the
   permanent rules, and only those. `cold` is fetched on demand.
+- **Pinned.** A pinned entry is curated by the person: imports,
+  consolidation and extraction never overwrite it. In Qwen Code it is
+  projected under the protected `pinned/` directory.
+- **Repository and worktree.** A project decision belongs to the repository;
+  a note specific to a branch lives in the linked worktree only when
+  `--worktree auto` is used.
+- **Team memory.** `--team` writes to the committed `.agents/memory/`; the
+  team sees it through Git. A high-confidence credential blocks the write.
 
 ## Architecture
 

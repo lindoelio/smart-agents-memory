@@ -14,7 +14,8 @@ import (
 // Known frontmatter keys, in the order Format writes them. Anything else is
 // preserved through Extra so a round-trip never drops what the user wrote.
 var knownKeys = []string{
-	"title", "type", "date", "source", "native", "tier",
+	"title", "type", "date", "source", "native", "tier", "pinned",
+	"project", "worktree",
 	"native_file", "native_type", "reason", "description", "keywords",
 }
 
@@ -71,6 +72,9 @@ func Parse(text string) (Entry, bool) {
 		Source:      flat["source"],
 		Native:      flat["native"],
 		Tier:        Tier(flat["tier"]),
+		Pinned:      flat["pinned"] == "true",
+		Project:     flat["project"],
+		Worktree:    flat["worktree"],
 		NativeFile:  flat["native_file"],
 		NativeType:  flat["native_type"],
 		Reason:      flat["reason"],
@@ -108,6 +112,15 @@ func Format(e Entry) string {
 	}
 	if e.Tier != "" {
 		b.WriteString("tier: " + string(e.Tier) + "\n")
+	}
+	if e.Pinned {
+		b.WriteString("pinned: true\n")
+	}
+	if e.Project != "" {
+		b.WriteString("project: " + e.Project + "\n")
+	}
+	if e.Worktree != "" {
+		b.WriteString("worktree: " + e.Worktree + "\n")
 	}
 	if e.NativeFile != "" {
 		b.WriteString("native_file: " + e.NativeFile + "\n")

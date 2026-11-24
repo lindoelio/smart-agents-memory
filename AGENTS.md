@@ -19,8 +19,10 @@ Ports and adapters, on both sides.
 - **The port** (`internal/vault`) is an interface, a registry, and a
   configuration. It never imports an adapter.
 - **The gateways** (`internal/vault/*`) register themselves from `init`.
-- **The domain** (`internal/memory`, `internal/native`) knows nothing about
-  where the memory lives.
+- **The domain** (`internal/memory`, `internal/native`, `internal/gitscope`,
+  `internal/secretguard`, `internal/teammemory`) never imports
+  `internal/vault`: the private store is reached through the port, while
+  team memory writes to the repository directly.
 
 Adding a gateway: one package, one `Register` call, one line in
 `cmd/smart-agents-memory/main.go`. Adding an entrypoint: one package over
@@ -50,6 +52,10 @@ These hold in the code and in the content of the store:
 2. The hot tier enters every session. The cold tier is fetched on demand.
 3. An entry without a why is not reusable.
 4. The stored memory is written in English.
+5. A project decision is repository-wide. A note specific to a branch
+   carries the linked worktree.
+6. Team memory is committed to the repository and shared through Git. A
+   high-confidence credential never enters it.
 
 ## Checks
 

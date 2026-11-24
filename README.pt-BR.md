@@ -29,6 +29,11 @@ O **store** é a sua memória: uma pasta de notas. Por padrão é um vault do
 Obsidian, sincronizado pelo iCloud — você lê e edita à mão — e ele nunca
 viaja para um repositório público.
 
+Dentro de um repositório Git, `add --team` escreve em `.agents/memory/`,
+versionado e compartilhado com o time. `brief` mostra em
+`## Team Memory (<repo-slug>)`, e `search` marca os resultados com `[team] `.
+Se o `.gitignore` exclui `.agents`, re-inclua `.agents/memory/`.
+
 | | |
 |---|---|
 | Ferramenta | [github.com/lindoelio/smart-agents-memory](https://github.com/lindoelio/smart-agents-memory) — MIT |
@@ -82,11 +87,21 @@ SQLite se preferir um único arquivo.
 
 ```bash
 smart-agents-memory search "neon"           # encontrar algo
-smart-agents-memory brief                   # o hot tier e o índice
+smart-agents-memory brief                   # o hot tier, o repo/worktree ativo
+smart-agents-memory brief --global          # ignorar o diretório atual
 smart-agents-memory brief --project meu-app # + as notas de um projeto
 smart-agents-memory add --scope lesson \
   --title "Título curto" \
   --body "Regra... Por quê..."               # registrar algo durável
+smart-agents-memory add --scope project \
+  --title "Decisão do projeto" --body "..."  # no repositório atual
+smart-agents-memory add --scope project --worktree auto \
+  --title "Decisão da branch" --body "..."   # no worktree atual
+smart-agents-memory add --scope lesson --team \
+  --title "Regra compartilhada" --body "..." # em .agents/memory/
+smart-agents-memory pin "Título curto"       # proteger uma entrada curada
+smart-agents-memory unpin "Título curto"     # liberar de novo
+smart-agents-memory prune-worktrees          # escopos de worktrees removidos
 smart-agents-memory log                     # o que foi registrado, e por quem
 smart-agents-memory index                   # reconciliar corpus <-> projeções
 smart-agents-memory doctor                  # verificar a instalação
@@ -149,6 +164,14 @@ mínimo. Veja a
   essa pessoa continuam no idioma dela.
 - **Hot e cold.** `hot` entra em toda sessão — o perfil e as regras
   permanentes, e só isso. `cold` é buscado sob demanda.
+- **Pinned.** Uma entrada pinned é curada pela pessoa: imports, consolidação
+  e extração nunca a sobrescrevem. No Qwen Code ela é projetada no diretório
+  protegido `pinned/`.
+- **Repositório e worktree.** Uma decisão de projeto pertence ao repositório;
+  uma nota específica de branch fica no worktree linkado só com
+  `--worktree auto`.
+- **Team memory.** `--team` escreve no `.agents/memory/` versionado; o time
+  recebe pelo Git. Uma credencial de alta confiança bloqueia a escrita.
 
 ## Arquitetura
 

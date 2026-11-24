@@ -31,6 +31,17 @@ type IndexReport struct {
 // Index reconciles the corpus with the native projections and regenerates
 // the index.
 func (a *App) Index(ctx context.Context) (IndexReport, error) {
+	return a.index(ctx, indexOptions{})
+}
+
+// indexOptions are the internal switches of a reconciliation. A cleanup
+// that just deleted corpus entries must not run the native import: the old
+// projection would recreate what was removed.
+type indexOptions struct {
+	skipNativeImport bool
+}
+
+func (a *App) index(ctx context.Context, opts indexOptions) (IndexReport, error) {
 	report := IndexReport{}
 	if err := a.Projections.EnsureDirs(); err != nil {
 		return report, err
@@ -45,9 +56,12 @@ func (a *App) Index(ctx context.Context) (IndexReport, error) {
 	}
 
 	reconciler := a.Reconciler()
-	imported, updated, err := reconciler.Import(ctx, corpus)
-	if err != nil {
-		return report, err
+	imported, updated := 0, 0
+	if !opts.skipNativeImport {
+		imported, updated, err = reconciler.Import(ctx, corpus)
+		if err != nil {
+			return report, err
+		}
 	}
 	// Import writes through the vault. The slice it was given does not
 	// grow with those writes, so the export reads the corpus again.

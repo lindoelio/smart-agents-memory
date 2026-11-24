@@ -128,6 +128,21 @@ func (a *App) Doctor(ctx context.Context) (DoctorReport, error) {
 		}
 	}
 
+	// A worktree that no longer exists leaves corpus entries and project
+	// notes behind. Report them; prune-worktrees removes them on request.
+	scopes, err := a.staleWorktreeScopes(ctx, "")
+	if err != nil {
+		report.Problems = append(report.Problems, "cannot check worktrees: "+err.Error())
+	} else {
+		for _, e := range scopes.Entries {
+			report.Problems = append(report.Problems,
+				fmt.Sprintf("stale worktree: %s@%s (%s)", e.Project, e.Worktree, e.Title))
+		}
+		for _, name := range scopes.Notes {
+			report.Problems = append(report.Problems, "stale worktree note: "+name)
+		}
+	}
+
 	// The skill must be installed.
 	for _, dir := range skillDirs(homeDir()) {
 		path := filepath.Join(dir, "smart-agents-memory")

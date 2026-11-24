@@ -16,6 +16,9 @@ internal/vault             the port of the store, and its registry
 internal/vault/*           the gateways: obsidian, disk, sqlite
 internal/vault/filevault   the shared base of obsidian and disk
 internal/memory            the domain: entries, types, tiers, slugs
+internal/gitscope          the repository and linked-worktree resolver
+internal/secretguard       the high-confidence credential scan
+internal/teammemory        the Git-backed team store and Qwen projection
 internal/native            the projection formats of each tool
 internal/reconcile         the rule that keeps the corpus and the projections in step
 internal/projection        the local native store
@@ -26,7 +29,8 @@ internal/skill             the skill embedded in the binary
 
 Two rules hold the shape together:
 
-1. **The domain knows no gateway.** `internal/memory` and `internal/native`
+1. **The domain knows no gateway.** `internal/memory`, `internal/native`,
+   `internal/gitscope`, `internal/secretguard` and `internal/teammemory`
    never import `internal/vault`. The store is reached through the port.
 2. **The port knows no gateway.** `internal/vault` never imports an adapter.
    An adapter registers itself from its `init`, and the command imports it
@@ -50,6 +54,7 @@ the documentation and the stored memory:
 | Exported types | domain nouns | `Entry`, `Vault`, `Reconciler`, `Projection` |
 | Entry types | the four fixed scopes | `user`, `lesson`, `project`, `reference` |
 | Tiers | two fixed values | `hot`, `cold` |
+| Scope | repository slug, then worktree id | `project`, `worktree` |
 | Gateways | lowercase registered names | `obsidian`, `disk`, `sqlite` |
 | Native targets | the tool, or the tool and the store | `minimax-user`, `minimax-agent`, `qwen` |
 | CLI flags | long, kebab-case | `--memory-home`, `--allow-other-language` |

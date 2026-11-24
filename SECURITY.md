@@ -8,6 +8,7 @@ directory of the user.
 | Path | What lives there |
 |---|---|
 | The store | The memory: one Markdown note per entry, or a row in a SQLite database |
+| `<repo>/.agents/memory/`, `<repo>/.qwen/team-memory/` | Team memory, committed to the repository |
 | `~/.config/smart-agents-memory/` | The configuration file, and no token |
 | `~/.local/share/smart-agents-memory/` | The materialized skill; for SQLite also the hot tier, the projection state and the local projections |
 | `~/.minimax/`, `~/.qwen/`, `~/.codex/`, `~/.claude/`, `~/.gemini/`, `~/.config/opencode/`, `~/.cursor/`, `~/.agents/` | The symlinks that connect the tools to the store |
@@ -26,6 +27,9 @@ to one. It holds whatever the owner decided to remember: preferences,
 decisions, project context. The repository ships the tool; the memory stays
 with the person.
 
+Team memory is the deliberate exception: `.agents/memory/` lives inside the
+repository and is meant to be committed and shared.
+
 Before publishing anything that came out of a store, read it. The
 `examples/corpus` folder of this repository is the only corpus that belongs
 here, and it is synthetic.
@@ -39,9 +43,14 @@ here, and it is synthetic.
   the backend and the paths of the store.
 - **No secret is ever written to the store.** The write log records what
   changed and where it came from, never a credential.
-- The `add` command warns when the body of an entry does not look like
-  English, but it does not inspect the content for secrets: **do not put a
-  credential in a memory entry**.
+- **SecretGuard blocks high-confidence credentials.** `add`, the native
+  import and every team write scan the title and the body for the gitleaks
+  patterns. A match rejects the write; the error names the rule, never the
+  matched value. The scan is a backstop, not a guarantee: do not put a
+  credential in a memory entry.
+- **Team memory is committed to the repository.** Treat a team note like
+  any other file you commit. `.agents/memory/` and `.qwen/team-memory/`
+  reject a symlink that could redirect a write outside the worktree.
 
 ## The symlinks
 

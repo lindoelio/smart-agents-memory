@@ -37,6 +37,8 @@ func fixture() []memory.Entry {
 			Body:       "Under set -euo pipefail, a pipeline that fails inside $(...) aborts the whole script.",
 			Tier:       memory.TierCold,
 			Source:     memory.DefaultSource,
+			Project:    "demo",
+			Worktree:   "feature",
 			Native:     "minimax-agent",
 			NativeType: "reference",
 		},
@@ -46,7 +48,9 @@ func fixture() []memory.Entry {
 			Date:       "2026-11-07",
 			Body:       "The Flutter client lives in apps/client, not apps/web.",
 			Tier:       memory.TierCold,
+			Pinned:     true,
 			Source:     memory.DefaultSource,
+			Project:    "demo",
 			Native:     "minimax-agent",
 			NativeType: "reference",
 		},
@@ -116,6 +120,12 @@ func check(t *testing.T, kind string, entries []memory.Entry) {
 		}
 		if e.Tier != original.Tier {
 			t.Fatalf("%s: the tier of %q is %q, want %q", kind, e.Title, e.Tier, original.Tier)
+		}
+		if e.Pinned != original.Pinned {
+			t.Fatalf("%s: the pinned state of %q is %v, want %v", kind, e.Title, e.Pinned, original.Pinned)
+		}
+		if e.Project != original.Project || e.Worktree != original.Worktree {
+			t.Fatalf("%s: the scope of %q is %q@%q, want %q@%q", kind, e.Title, e.Project, e.Worktree, original.Project, original.Worktree)
 		}
 		if e.Date != original.Date {
 			t.Fatalf("%s: the date of %q is %q, want %q", kind, e.Title, e.Date, original.Date)
@@ -218,6 +228,102 @@ It lives in a folder of the vault.
 	}
 	if len(entries) != 0 {
 		t.Fatalf("the disk gateway found a note outside corpus/: %+v", entries)
+	}
+}
+
+// TestAPinnedDirectoryMarksTheEntry keeps a hand-curated note protected by
+// its folder, even when the YAML property is absent.
+func TestAPinnedDirectoryMarksTheEntry(t *testing.T) {
+	root := t.TempDir()
+	note := `---
+title: "A curated rule"
+type: lesson
+date: 2026-11-07
+---
+
+## A curated rule
+
+The user put this note in the pinned folder.
+`
+	dir := filepath.Join(root, "corpus", "pinned")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "a-curated-rule.md"), []byte(note), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, kind := range []string{"obsidian", "disk"} {
+		t.Run(kind, func(t *testing.T) {
+			store, err := vault.Open(vault.Config{Backend: kind, MemoryHome: root})
+			if err != nil {
+				t.Fatal(err)
+			}
+			entries, err := store.Entries(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 1 {
+				t.Fatalf("the %s gateway read %d entries, want 1", kind, len(entries))
+			}
+			if !entries[0].Pinned {
+				t.Fatalf("the %s gateway did not protect the note by its path", kind)
+			}
+		})
+	}
+}
+
+// TestWorktreeNotesStayInsideTheProjectFolder keeps the worktree note
+// beside the project note and refuses a name that would escape projects/.
+func TestWorktreeNotesStayInsideTheProjectFolder(t *testing.T) {
+	root := t.TempDir()
+	dir := filepath.Join(root, "projects")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "demo.md"), []byte("repo-wide"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "demo@feature.md"), []byte("branch-local"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := vault.Open(vault.Config{Backend: "obsidian", MemoryHome: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	notes, ok := store.(vault.WorktreeNotes)
+	if !ok {
+		t.Fatal("the file gateway does not implement worktree notes")
+	}
+	note, found, err := notes.WorktreeNote(context.Background(), "demo", "feature")
+	if err != nil || !found || note != "branch-local" {
+		t.Fatalf("the worktree note is %q %v %v", note, found, err)
+	}
+	if _, _, err := notes.WorktreeNote(context.Background(), "../../outside", "feature"); err == nil {
+		t.Fatal("a name escaped the projects folder")
+	}
+
+	lister, ok := store.(vault.ProjectNoteLister)
+	if !ok {
+		t.Fatal("the file gateway does not list project notes")
+	}
+	names, err := lister.ProjectNoteNames(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(names) != 2 || names[0] != "demo" || names[1] != "demo@feature" {
+		t.Fatalf("the note names are %v", names)
+	}
+	remover, ok := store.(vault.ProjectNoteRemover)
+	if !ok {
+		t.Fatal("the file gateway does not remove project notes")
+	}
+	if err := remover.RemoveProjectNote(context.Background(), "demo@feature"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "demo@feature.md")); !os.IsNotExist(err) {
+		t.Fatal("the worktree note was not removed")
 	}
 }
 

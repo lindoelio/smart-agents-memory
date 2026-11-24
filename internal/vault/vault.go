@@ -68,6 +68,25 @@ type ProjectNotes interface {
 	ProjectNote(ctx context.Context, name string) (string, bool, error)
 }
 
+// WorktreeNotes is implemented by gateways that keep one note per project
+// worktree. The note lives beside the project note, named
+// <project>@<worktree>.md.
+type WorktreeNotes interface {
+	WorktreeNote(ctx context.Context, project, worktree string) (string, bool, error)
+}
+
+// ProjectNoteLister is implemented by gateways that can list the names of
+// their project notes. The name does not carry the .md suffix.
+type ProjectNoteLister interface {
+	ProjectNoteNames(ctx context.Context) ([]string, error)
+}
+
+// ProjectNoteRemover is implemented by gateways that can delete one project
+// or worktree note. It is optional.
+type ProjectNoteRemover interface {
+	RemoveProjectNote(ctx context.Context, name string) error
+}
+
 // Renamer is implemented by gateways that can move an entry to a new
 // address, which is what a title change needs. It is optional.
 type Renamer interface {

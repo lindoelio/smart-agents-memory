@@ -30,6 +30,9 @@ The rule, and what it costs. The why is what makes it reusable.
 | `source` | Where it came from: the CLI, or the native store of a tool |
 | `native` | The projection: `minimax-user`, `minimax-agent`, `qwen` |
 | `tier` | `hot` or `cold` |
+| `pinned` | `true` protects the entry from automated edits, imports and consolidation |
+| `project` | The repository or project slug the entry belongs to |
+| `worktree` | The linked git worktree identifier, when scoped to one worktree |
 | `native_type` | The type of the entry in the native format |
 | `native_file` | The name of the file of the native projection |
 | `reason` | Why the entry was appended to the user profile |
@@ -38,6 +41,41 @@ The rule, and what it costs. The why is what makes it reusable.
 
 A property the product does not know is **preserved**. A round trip never
 drops what was written by hand.
+
+## Project and worktree scope
+
+`project` is the repository slug. A project decision is repository-wide
+unless it also carries `worktree`, which names a linked Git worktree.
+
+The notes of a project live beside the corpus:
+
+```
+projects/<project>.md
+projects/<project>@<worktree>.md
+```
+
+`brief` reads the notes and the scoped entries of the active repository and
+worktree. The note is optional: the entries alone are enough.
+
+## Team memory
+
+Inside a Git repository, `add --team` writes to `.agents/memory/`:
+
+```
+.agents/memory/
+  MEMORY.md                  the generated index
+  corpus/<type>/<slug>.md    one note per entry, the standard format
+```
+
+The directory is committed and shared through the normal Git workflow. If
+`.gitignore` excludes `.agents` or `.qwen`, re-include `.agents/memory/` and
+`.qwen/team-memory/`, or the team store stays silently empty in Git. If
+`.qwen/team-memory/` exists, or the write requests the Qwen projection, the
+entry is mirrored there in the Qwen topic format. Both mirrors reject a
+symlink that could lead outside the worktree.
+
+A write containing a high-confidence credential is rejected by the
+SecretGuard; the error names the rule, never the matched value.
 
 ## The types
 
@@ -75,6 +113,16 @@ counter.
 | `minimax-agent`, hot | `### Title (YYYY-MM-DD)`, a `Type:` line, then the body |
 | `minimax-agent`, cold | A topic file: a YAML `description`, a marker with the title, then the body |
 | `qwen` | Properties `name`, `description`, `type`, `category`, then the body |
+| `qwen`, pinned | The same topic, under `pinned/<file>.md` instead of the root |
+
+The `pinned` property never moves the corpus note: it stays in
+`corpus/<type>/<slug>.md`. The Qwen projection materializes the protection as
+the top-level `pinned/` directory that Qwen Code treats as read-only for its
+automatic extraction and Dream workers. The index links the entry as
+`pinned/<file>.md`.
+
+A note placed by hand under a `pinned/` directory is read as pinned even when
+the YAML property is absent. The path can add protection; it never removes it.
 
 A topic description is a YAML scalar. A space stays a space.
 
@@ -92,7 +140,12 @@ Every write is recorded, append-only, in `log/YYYY-MM-DD.md`:
 
 ```
 - 18:24 | add | lesson | A durable lesson | smart-agents-memory-cli
+- 18:25 | pin | lesson | A durable lesson
+- 18:26 | unpin | lesson | A durable lesson
+- 18:27 | prune-worktrees | entries=1 notes=1
 ```
+
+An append forced onto a pinned entry records `(append, forced on pinned)`.
 
 The log is a record of what happened, not a place to store content. It is
 never rewritten.

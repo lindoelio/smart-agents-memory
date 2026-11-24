@@ -4,6 +4,32 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **Pinned entries.** `add --pinned`, `pin` and `unpin` protect a curated
+  memory from automated imports and consolidation. Qwen Code receives the
+  entry under its protected `pinned/` directory, and a newer native edit
+  cannot overwrite the corpus. An existing SQLite store gains the column on
+  open; a missing value reads as false.
+- **Repository and worktree scope.** `add --scope project` detects the Git
+  repository, `--worktree auto` scopes a note to the linked worktree, and
+  `brief` prints the project and worktree sections automatically. The scope
+  is stored in `project` and `worktree`; SQLite migrates the columns and the
+  project index on open.
+- **`prune-worktrees`.** Reports memories scoped to worktrees that no longer
+  exist; `--apply` removes the unpinned, cold entries and their notes,
+  reexports the projections and never touches pinned or hot entries. A note
+  whose worktree still has a protected entry is kept.
+- **Team memory.** `add --team` writes to the Git-backed `.agents/memory/`,
+  with an optional `.qwen/team-memory/` projection. `brief` adds
+  `## Team Memory (<repo-slug>)` and `search` marks team hits with
+  `[team] `. The directory refuses a symlink that escapes the worktree.
+- **SecretGuard.** Every private and team write, and every native import,
+  scans for high-confidence credentials. A match rejects or skips the write
+  and names only the rule, never the matched value.
+
 ## [0.2.0] — 2026-11-11
 
 The corpus is the source the projections follow, and a gateway that could

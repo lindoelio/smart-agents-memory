@@ -409,7 +409,10 @@ func (s *Store) writePlainIndex(corpus []memory.Entry) (string, error) {
 
 // ProjectNote returns the note of a project, when the store has one.
 func (s *Store) ProjectNote(_ context.Context, name string) (string, bool, error) {
-	path := filepath.Join(s.root, "projects", name+".md")
+	path, err := s.projectNotePath(name)
+	if err != nil {
+		return "", false, err
+	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -418,6 +421,54 @@ func (s *Store) ProjectNote(_ context.Context, name string) (string, bool, error
 		return "", false, err
 	}
 	return string(data), true, nil
+}
+
+// WorktreeNote returns the note of one project worktree, when it exists.
+func (s *Store) WorktreeNote(ctx context.Context, project, worktree string) (string, bool, error) {
+	return s.ProjectNote(ctx, project+"@"+worktree)
+}
+
+// ProjectNoteNames lists the project and worktree notes, without the .md
+// suffix. A worktree note keeps the <project>@<worktree> name.
+func (s *Store) ProjectNoteNames(_ context.Context) ([]string, error) {
+	entries, err := os.ReadDir(filepath.Join(s.root, "projects"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var names []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".md") {
+			continue
+		}
+		names = append(names, strings.TrimSuffix(entry.Name(), ".md"))
+	}
+	sort.Strings(names)
+	return names, nil
+}
+
+// RemoveProjectNote deletes one project or worktree note.
+func (s *Store) RemoveProjectNote(_ context.Context, name string) error {
+	path, err := s.projectNotePath(name)
+	if err != nil {
+		return err
+	}
+	err = os.Remove(path)
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
+}
+
+// projectNotePath keeps a note name inside projects/. A name from a flag is
+// not trusted: a slash or a parent segment could escape the store.
+func (s *Store) projectNotePath(name string) (string, error) {
+	if name == "" || name == "." || name == ".." || name != filepath.Base(name) || strings.ContainsAny(name, `/\`) {
+		return "", fmt.Errorf("invalid project note name %q", name)
+	}
+	return filepath.Join(s.root, "projects", name+".md"), nil
 }
 
 // discover finds the notes that hold entries.
@@ -518,10 +569,28 @@ func (s *Store) readEntry(path string) (memory.Entry, bool, error) {
 		return memory.Entry{}, false, nil
 	}
 	entry.Path = s.rel(path)
+	// A note the user placed under a pinned/ directory is curated even
+	// when the YAML key is absent, so the Obsidian vault can protect it
+	// by folder. The path wins: it can add protection, never remove it.
+	if hasPinnedSegment(entry.Path) {
+		entry.Pinned = true
+	}
 	if info, err := os.Stat(path); err == nil {
 		entry.ModTime = info.ModTime()
 	}
 	return entry, true, nil
+}
+
+// hasPinnedSegment reports whether a relative path contains a pinned
+// directory. The comparison folds case, matching the Qwen convention on
+// case-insensitive filesystems.
+func hasPinnedSegment(rel string) bool {
+	for _, segment := range strings.Split(filepath.ToSlash(rel), "/") {
+		if strings.EqualFold(segment, "pinned") {
+			return true
+		}
+	}
+	return false
 }
 
 // titleOf returns the title of the entry stored in a note.

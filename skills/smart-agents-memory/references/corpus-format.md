@@ -29,6 +29,9 @@ The rule. Why it matters. What it cost.
 | `source` | Where it came from: the CLI, or the native store of a tool |
 | `native` | The projection: `minimax-user`, `minimax-agent`, `qwen` |
 | `tier` | `hot` (in every session) or `cold` (on demand) |
+| `pinned` | `true` protects the entry from automated edits, imports and consolidation |
+| `project` | The repository or project slug |
+| `worktree` | The linked git worktree identifier |
 | `native_type` | The type of the entry in the native format |
 | `native_file` | The file name of the native projection |
 | `reason` | Why the entry was appended to the user profile |
@@ -54,6 +57,42 @@ few of them. `cold` is the default and is fetched on demand — in MiniMax
 Code, as a topic file where only the name and the description enter the
 context.
 
+## Pinned entries
+
+`pinned: true` marks a curated entry that automated imports, consolidation
+and extraction must never overwrite, rename or delete. It does not move the
+corpus note: the property lives in the same `corpus/<type>/<slug>.md`.
+
+The Qwen projection materializes the protection as
+`native/qwen/pinned/<file>.md`, the top-level directory Qwen Code treats as
+read-only for its automatic workers. A note placed by hand under a `pinned/`
+folder is read as pinned even without the property.
+
+## Project and worktree scope
+
+`project` is the repository slug. `worktree` is the linked worktree id and
+is present only for branch-local notes. The project note lives at
+`projects/<project>.md`; the worktree note at
+`projects/<project>@<worktree>.md`.
+
+A project decision is repository-wide by default. Use the worktree only when
+the fact is specific to that branch or checkout.
+
+## Team memory
+
+Inside a Git repository, `add --team` writes to `.agents/memory/`:
+
+```
+.agents/memory/
+  MEMORY.md
+  corpus/<type>/<slug>.md
+```
+
+It is committed and shared through Git. When `.qwen/team-memory/` exists or
+the write asks for the Qwen projection, the same entry is mirrored there in
+the Qwen topic format. A credential detected by the SecretGuard blocks the
+write.
+
 ## The native projections
 
 The corpus is read by every tool, in the format each one already expects.
@@ -64,5 +103,6 @@ The corpus is read by every tool, in the format each one already expects.
 | `minimax-agent` | `### Title (YYYY-MM-DD)` plus a `Type:` line, in the injected `MEMORY.md` |
 | `minimax-agent` (cold) | A topic file: only the description enters the context |
 | `qwen` | Frontmatter with `name`, `description`, `type`, `category` |
+| `qwen`, pinned | The same topic, under `pinned/<file>.md` |
 
 A projection is never merged: it is regenerated from the corpus.

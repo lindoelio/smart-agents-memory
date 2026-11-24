@@ -49,6 +49,74 @@ The rule. Why it matters.
 	}
 }
 
+func TestPinnedRoundTrip(t *testing.T) {
+	source := `---
+title: "A pinned rule"
+type: lesson
+date: 2026-11-07
+tier: cold
+pinned: true
+---
+
+## A pinned rule
+
+The rule. Why it matters.
+`
+	entry, ok := Parse(source)
+	if !ok {
+		t.Fatal("the pinned note was not parsed")
+	}
+	if !entry.Pinned {
+		t.Fatal("the note was not read as pinned")
+	}
+	if _, kept := entry.Extra["pinned"]; kept {
+		t.Fatal("pinned was preserved as an unknown key")
+	}
+
+	formatted := Format(entry)
+	if !strings.Contains(formatted, "tier: cold\npinned: true\n") {
+		t.Fatalf("pinned is not after tier:\n%s", formatted)
+	}
+	again, ok := Parse(formatted)
+	if !ok || !again.Pinned {
+		t.Fatal("the formatted pinned note did not parse back as pinned")
+	}
+
+	unpinned := Format(Entry{Title: "An ordinary rule", Type: TypeLesson, Body: "Body."})
+	if strings.Contains(unpinned, "pinned:") {
+		t.Fatalf("an unpinned note carries the key:\n%s", unpinned)
+	}
+}
+
+func TestProjectAndWorktreeRoundTrip(t *testing.T) {
+	entry := Entry{
+		Title: "A branch decision", Type: TypeProject, Body: "The rule.",
+		Project: "my-repo", Worktree: "feature",
+	}
+	formatted := Format(entry)
+	if !strings.Contains(formatted, "project: my-repo\nworktree: feature\n") {
+		t.Fatalf("the scope is missing from the format:\n%s", formatted)
+	}
+	parsed, ok := Parse(formatted)
+	if !ok {
+		t.Fatal("the scoped note did not parse")
+	}
+	if parsed.Project != "my-repo" || parsed.Worktree != "feature" {
+		t.Fatalf("the scope came back as %+v", parsed)
+	}
+	if _, kept := parsed.Extra["project"]; kept {
+		t.Fatal("project was preserved as an unknown key")
+	}
+	if _, kept := parsed.Extra["worktree"]; kept {
+		t.Fatal("worktree was preserved as an unknown key")
+	}
+
+	plain := Format(Entry{Title: "A plain rule", Type: TypeLesson, Body: "Body."})
+	if strings.Contains(plain, "project:") || strings.Contains(plain, "worktree:") {
+		t.Fatalf("an unscoped note carries the keys:\n%s", plain)
+	}
+}
+
 func TestParseKeepsUnknownKeys(t *testing.T) {
 	source := `---
 title: "Keeps what it does not know"

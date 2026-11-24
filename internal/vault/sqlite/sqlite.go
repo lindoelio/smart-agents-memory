@@ -32,6 +32,9 @@ CREATE TABLE IF NOT EXISTS entries (
 	date         TEXT NOT NULL DEFAULT '',
 	body         TEXT NOT NULL DEFAULT '',
 	tier         TEXT NOT NULL DEFAULT '',
+	pinned       INTEGER NOT NULL DEFAULT 0,
+	project      TEXT NOT NULL DEFAULT '',
+	worktree     TEXT NOT NULL DEFAULT '',
 	source       TEXT NOT NULL DEFAULT '',
 	native       TEXT NOT NULL DEFAULT '',
 	native_type  TEXT NOT NULL DEFAULT '',
@@ -103,8 +106,78 @@ func (s *Store) connect() error {
 		db.Close()
 		return err
 	}
+	if err := ensureColumns(db); err != nil {
+		db.Close()
+		return err
+	}
 	s.db = db
 	return nil
+}
+
+// ensureColumns adds the columns introduced after the first schema release.
+// It is idempotent: a fresh database already has them. The project index is
+// created here, not in the schema, because an old database has no project
+// column when the schema statement runs.
+func ensureColumns(db *sql.DB) error {
+	for _, column := range []struct {
+		name       string
+		definition string
+	}{
+		{"pinned", "INTEGER NOT NULL DEFAULT 0"},
+		{"project", "TEXT NOT NULL DEFAULT ''"},
+		{"worktree", "TEXT NOT NULL DEFAULT ''"},
+	} {
+		if err := ensureColumn(db, column.name, column.definition); err != nil {
+			return err
+		}
+	}
+	_, err := db.Exec(`CREATE INDEX IF NOT EXISTS entries_project ON entries(project)`)
+	return err
+}
+
+// ensureColumn adds one column when the table does not have it yet.
+func ensureColumn(db *sql.DB, name, definition string) error {
+	rows, err := db.Query(`PRAGMA table_info(entries)`)
+	if err != nil {
+		return err
+	}
+	found := false
+	for rows.Next() {
+		var (
+			cid     int
+			column  string
+			typ     string
+			notnull int
+			dflt    sql.NullString
+			pk      int
+		)
+		if err := rows.Scan(&cid, &column, &typ, &notnull, &dflt, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		if column == name {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+	_, err = db.Exec(`ALTER TABLE entries ADD COLUMN ` + name + ` ` + definition)
+	return err
+}
+
+func boolToInt(value bool) int {
+	if value {
+		return 1
+	}
+	return 0
 }
 
 func (s *Store) readyDB(ctx context.Context) (*sql.DB, error) {
@@ -159,8 +232,8 @@ func (s *Store) Entries(ctx context.Context) ([]memory.Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, title, type, date, body, tier, source, native,
-		native_type, native_file, reason, description, keywords, extra, updated_at
+	rows, err := db.QueryContext(ctx, `SELECT id, title, type, date, body, tier, pinned, project, worktree,
+		source, native, native_type, native_file, reason, description, keywords, extra, updated_at
 		FROM entries ORDER BY type, lower(title)`)
 	if err != nil {
 		return nil, err
@@ -172,17 +245,19 @@ func (s *Store) Entries(ctx context.Context) ([]memory.Entry, error) {
 		var (
 			e         memory.Entry
 			id        int
+			pinned    int
 			keywords  string
 			extra     string
 			updatedAt int64
 		)
-		if err := rows.Scan(&id, &e.Title, &e.Type, &e.Date, &e.Body, &e.Tier, &e.Source,
-			&e.Native, &e.NativeType, &e.NativeFile, &e.Reason, &e.Description,
-			&keywords, &extra, &updatedAt); err != nil {
+		if err := rows.Scan(&id, &e.Title, &e.Type, &e.Date, &e.Body, &e.Tier, &pinned,
+			&e.Project, &e.Worktree, &e.Source, &e.Native, &e.NativeType, &e.NativeFile,
+			&e.Reason, &e.Description, &keywords, &extra, &updatedAt); err != nil {
 			return nil, err
 		}
 		e.Path = fmt.Sprintf("entries/%d", id)
 		e.ModTime = time.Unix(updatedAt, 0)
+		e.Pinned = pinned != 0
 		e.Keywords = decodeList(keywords)
 		e.Extra = decodeMap(extra)
 		out = append(out, e)
@@ -210,10 +285,11 @@ func (s *Store) Create(ctx context.Context, e memory.Entry) (memory.Entry, error
 	}
 	now := time.Now()
 	res, err := db.ExecContext(ctx, `INSERT INTO entries
-		(title, type, date, body, tier, source, native, native_type, native_file,
+		(title, type, date, body, tier, pinned, project, worktree, source, native, native_type, native_file,
 		 reason, description, keywords, extra, updated_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		e.Title, string(e.Type), e.Date, e.Body, string(e.Tier), e.Source, e.Native,
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		e.Title, string(e.Type), e.Date, e.Body, string(e.Tier), boolToInt(e.Pinned),
+		e.Project, e.Worktree, e.Source, e.Native,
 		e.NativeType, e.NativeFile, e.Reason, e.Description,
 		encodeList(e.Keywords), encodeMap(e.Extra), now.Unix())
 	if err != nil {
@@ -239,9 +315,10 @@ func (s *Store) Update(ctx context.Context, e memory.Entry) error {
 		return err
 	}
 	_, err = db.ExecContext(ctx, `UPDATE entries SET title=?, type=?, date=?, body=?, tier=?,
-		source=?, native=?, native_type=?, native_file=?, reason=?, description=?,
-		keywords=?, extra=?, updated_at=? WHERE id=?`,
-		e.Title, string(e.Type), e.Date, e.Body, string(e.Tier), e.Source, e.Native,
+		pinned=?, project=?, worktree=?, source=?, native=?, native_type=?, native_file=?,
+		reason=?, description=?, keywords=?, extra=?, updated_at=? WHERE id=?`,
+		e.Title, string(e.Type), e.Date, e.Body, string(e.Tier), boolToInt(e.Pinned),
+		e.Project, e.Worktree, e.Source, e.Native,
 		e.NativeType, e.NativeFile, e.Reason, e.Description,
 		encodeList(e.Keywords), encodeMap(e.Extra), time.Now().Unix(), id)
 	return err
@@ -359,6 +436,43 @@ func (s *Store) ProjectNote(ctx context.Context, name string) (string, bool, err
 		return "", false, err
 	}
 	return body, true, nil
+}
+
+// WorktreeNote returns the note of one project worktree, when it exists.
+func (s *Store) WorktreeNote(ctx context.Context, project, worktree string) (string, bool, error) {
+	return s.ProjectNote(ctx, project+"@"+worktree)
+}
+
+// ProjectNoteNames lists the project and worktree notes.
+func (s *Store) ProjectNoteNames(ctx context.Context) ([]string, error) {
+	db, err := s.readyDB(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := db.QueryContext(ctx, `SELECT name FROM project_notes ORDER BY name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
+// RemoveProjectNote deletes one project or worktree note.
+func (s *Store) RemoveProjectNote(ctx context.Context, name string) error {
+	db, err := s.readyDB(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = db.ExecContext(ctx, `DELETE FROM project_notes WHERE name = ?`, name)
+	return err
 }
 
 // putProjectNote stores a project note. The command line does not write

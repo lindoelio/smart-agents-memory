@@ -9,6 +9,7 @@ package reconcile
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -19,6 +20,7 @@ import (
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/native"
 	"github.com/lindoelio/smart-agents-memory/internal/projection"
+	"github.com/lindoelio/smart-agents-memory/internal/secretguard"
 	"github.com/lindoelio/smart-agents-memory/internal/vault"
 )
 
@@ -28,6 +30,15 @@ type Reconciler struct {
 	Vault vault.Vault
 	// Projections is the local native store.
 	Projections *projection.Store
+	// Warn receives one line per skipped file, when it is set.
+	Warn io.Writer
+}
+
+func (r *Reconciler) warn(format string, args ...any) {
+	if r.Warn == nil {
+		return
+	}
+	fmt.Fprintf(r.Warn, "warning: "+format+"\n", args...)
 }
 
 // Import brings native entries into the corpus.
@@ -43,6 +54,10 @@ func (r *Reconciler) Import(ctx context.Context, corpus []memory.Entry) (int, in
 
 	added, updated := 0, 0
 	for _, candidate := range r.candidates() {
+		if err := secretguard.Check(candidate.Title, candidate.Body); err != nil {
+			r.warn("skipped native entry: %v", err)
+			continue
+		}
 		// A projection that this tool wrote is not news: only what a
 		// tool wrote after the last projection is worth importing.
 		if !r.Projections.LastProjection().IsZero() &&
@@ -60,6 +75,11 @@ func (r *Reconciler) Import(ctx context.Context, corpus []memory.Entry) (int, in
 			corpus = append(corpus, stored)
 			byTitle[key] = stored
 			added++
+			continue
+		}
+		if current.Pinned {
+			// A pinned entry is user-curated. No projection, however
+			// new, may replace it; export restores the projection.
 			continue
 		}
 		if memory.NormBody(candidate.Body) == memory.NormBody(current.Body) {
@@ -150,18 +170,20 @@ func (r *Reconciler) Export(_ context.Context, corpus []memory.Entry) (int, erro
 	}
 	changed += removed
 
-	wantedQwen := map[string]bool{"MEMORY.md": true}
+	wantedRoot := map[string]bool{"MEMORY.md": true}
+	wantedPinned := map[string]bool{}
 	var indexLines []string
 	for _, e := range corpus {
 		if e.Native != string(native.TargetQwen) {
 			continue
 		}
-		name := e.NativeFile
-		if name == "" {
-			name = memory.Slugify(e.Title) + ".md"
+		rel := qwenRel(e)
+		if e.Pinned {
+			wantedPinned[rel] = true
+		} else {
+			wantedRoot[rel] = true
 		}
-		wantedQwen[name] = true
-		wrote, err := r.Projections.WriteIfChanged(native.TargetQwen, name, native.RenderQwen(e))
+		wrote, err := r.Projections.WriteIfChanged(native.TargetQwen, rel, native.RenderQwen(e))
 		if err != nil {
 			return changed, err
 		}
@@ -172,7 +194,7 @@ func (r *Reconciler) Export(_ context.Context, corpus []memory.Entry) (int, erro
 		if desc == "" {
 			desc = e.Title
 		}
-		indexLines = append(indexLines, fmt.Sprintf("- [%s](%s) — %s", e.Title, name, desc))
+		indexLines = append(indexLines, fmt.Sprintf("- [%s](%s) — %s", e.Title, rel, desc))
 	}
 	qwenIndex := ""
 	if len(indexLines) > 0 {
@@ -185,12 +207,42 @@ func (r *Reconciler) Export(_ context.Context, corpus []memory.Entry) (int, erro
 	if wrote {
 		changed++
 	}
-	removed, err = r.removeAbsent(native.TargetQwen, "", wantedQwen, true)
+	removed, err = r.removeAbsent(native.TargetQwen, "", wantedRoot, true)
+	if err != nil {
+		return changed, err
+	}
+	changed += removed
+	removed, err = r.removeAbsent(native.TargetQwen, "pinned", wantedPinned, false)
 	if err != nil {
 		return changed, err
 	}
 	changed += removed
 	return changed, nil
+}
+
+// qwenRel is the relative path of a Qwen projection. The pinned state lives
+// in the corpus; the projection materializes it as the protected directory
+// Qwen Code understands.
+func qwenRel(e memory.Entry) string {
+	name := qwenFilename(e)
+	if e.Pinned {
+		return "pinned/" + name
+	}
+	return name
+}
+
+// qwenFilename is the base name of a Qwen projection. A corpus entry that
+// already carries a directory in NativeFile is normalized: the directory is
+// derived from Pinned, never from the old value.
+func qwenFilename(e memory.Entry) string {
+	name := filepath.Base(e.NativeFile)
+	if name == "" || name == "." {
+		name = memory.Slugify(e.Title) + ".md"
+	}
+	if !strings.HasSuffix(name, ".md") {
+		name += ".md"
+	}
+	return name
 }
 
 // ReconcileHot makes the hot tier file a projection of the hot entries.
@@ -267,10 +319,19 @@ func (r *Reconciler) importHot(ctx context.Context, interior string, fileMod tim
 // upsertHot creates or updates one hot entry. The corpus wins when it is
 // newer than the file.
 func (r *Reconciler) upsertHot(ctx context.Context, corpus []memory.Entry, title, body, reason string, fileMod time.Time) (int, int, error) {
+	if err := secretguard.Check(title, body); err != nil {
+		r.warn("skipped native hot entry: %v", err)
+		return 0, 0, nil
+	}
 	key := memory.NormTitle(title)
 	for _, current := range corpus {
 		if memory.NormTitle(current.Title) != key {
 			continue
+		}
+		if current.Pinned {
+			// The hot block is another import path; a pinned entry is
+			// protected here too.
+			return 0, 0, nil
 		}
 		if !current.ModTime.IsZero() && !fileMod.After(current.ModTime) {
 			return 0, 0, nil
@@ -423,24 +484,33 @@ func (r *Reconciler) candidates() []memory.Entry {
 			out = append(out, e)
 		}
 	}
+	var qwenFiles []string
 	if files, err := r.Projections.List(native.TargetQwen, ""); err == nil {
-		for _, rel := range files {
-			if rel == "MEMORY.md" {
-				continue
-			}
-			content, err := r.Projections.Read(native.TargetQwen, rel)
-			if err != nil {
-				continue
-			}
-			e, ok := native.ParseQwen(content, filepath.Base(rel))
-			if !ok {
-				continue
-			}
-			if mod, err := r.Projections.ModTime(native.TargetQwen, rel); err == nil {
-				e.ModTime = mod
-			}
-			out = append(out, e)
+		qwenFiles = append(qwenFiles, files...)
+	}
+	if files, err := r.Projections.List(native.TargetQwen, "pinned"); err == nil {
+		qwenFiles = append(qwenFiles, files...)
+	}
+	for _, rel := range qwenFiles {
+		if rel == "MEMORY.md" {
+			continue
 		}
+		content, err := r.Projections.Read(native.TargetQwen, rel)
+		if err != nil {
+			continue
+		}
+		e, ok := native.ParseQwen(content, filepath.Base(rel))
+		if !ok {
+			continue
+		}
+		// A pinned projection pins a new title. For a title the corpus
+		// already has, the corpus owns the state, so import never flips
+		// an existing entry back to pinned.
+		e.Pinned = strings.HasPrefix(rel, "pinned/")
+		if mod, err := r.Projections.ModTime(native.TargetQwen, rel); err == nil {
+			e.ModTime = mod
+		}
+		out = append(out, e)
 	}
 	return out
 }

@@ -82,6 +82,12 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return cmdBrief(ctx, opts, commandArgs, out, errOut)
 	case "add":
 		return cmdAdd(ctx, opts, commandArgs, out, errOut)
+	case "pin":
+		return cmdSetPinned(ctx, opts, commandArgs, true, out, errOut)
+	case "unpin":
+		return cmdSetPinned(ctx, opts, commandArgs, false, out, errOut)
+	case "prune-worktrees":
+		return cmdPruneWorktrees(ctx, opts, commandArgs, out, errOut)
 	case "log":
 		return cmdLog(ctx, opts, commandArgs, out, errOut)
 	case "index":
@@ -203,11 +209,19 @@ func searchAndPrint(ctx context.Context, a *app.App, query string, limit int, ou
 func cmdBrief(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
 	fs := newFlagSet("brief", out, errOut, &opts)
 	project := fs.String("project", "", "notes of a project")
+	worktree := fs.String("worktree", "", "notes of a project worktree")
+	global := fs.Bool("global", false, "disable repository auto-detection")
 	query := fs.String("query", "", "also search for this")
 	limit := fs.Int("limit", 20, "maximum number of results")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	projectExplicit := false
+	fs.Visit(func(f *flag.Flag) {
+		if f.Name == "project" {
+			projectExplicit = true
+		}
+	})
 	a, err := build(opts, out, errOut)
 	if err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
@@ -217,7 +231,12 @@ func cmdBrief(ctx context.Context, opts config.Options, args []string, out, errO
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	text, err := a.Brief(ctx, *project, *query, *limit)
+	text, err := a.Brief(ctx, app.BriefOptions{
+		Project:         *project,
+		Worktree:        *worktree,
+		Global:          *global,
+		ProjectExplicit: projectExplicit,
+	})
 	if err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
@@ -243,6 +262,10 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 	tier := fs.String("tier", "cold", "hot or cold")
 	description := fs.String("description", "", "the one line a runtime injects")
 	reason := fs.String("reason", "", "why the entry was recorded")
+	pinned := fs.Bool("pinned", false, "protect the entry from automated edits")
+	team := fs.Bool("team", false, "write to the Git-backed team memory")
+	project := fs.String("project", "", "repository or project slug")
+	worktree := fs.String("worktree", "", "worktree id, or auto")
 	force := fs.Bool("force", false, "write even when the title already exists")
 	allow := fs.Bool("allow-other-language", false, "skip the English-default warning")
 	if err := fs.Parse(args); err != nil {
@@ -257,9 +280,11 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if err := a.RequireStore(ctx); err != nil {
-		fmt.Fprintln(errOut, "error: "+err.Error())
-		return 1
+	if !*team {
+		if err := a.RequireStore(ctx); err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
 	}
 	message, err := a.Add(ctx, app.AddOptions{
 		Scope:              *scope,
@@ -271,6 +296,11 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 		Description:        *description,
 		Reason:             *reason,
 		Tags:               splitTags(*tags),
+		Pinned:             *pinned,
+		Project:            *project,
+		Worktree:           worktreeValue(*worktree),
+		WorktreeAuto:       *worktree == "auto",
+		Team:               *team,
 		Force:              *force,
 		AllowOtherLanguage: *allow,
 	})
@@ -279,6 +309,93 @@ func cmdAdd(ctx context.Context, opts config.Options, args []string, out, errOut
 		return 1
 	}
 	fmt.Fprintln(out, message)
+	return 0
+}
+
+// cmdSetPinned protects or releases one entry.
+func cmdSetPinned(ctx context.Context, opts config.Options, args []string, pinned bool, out, errOut io.Writer) int {
+	name := "pin"
+	if !pinned {
+		name = "unpin"
+	}
+	fs := newFlagSet(name, out, errOut, &opts)
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	title := strings.TrimSpace(fs.Arg(0))
+	if title == "" {
+		fmt.Fprintln(errOut, "error: a title is required")
+		return 2
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(ctx); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	message, err := a.SetPinned(ctx, title, pinned)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	fmt.Fprintln(out, message)
+	return 0
+}
+
+// cmdPruneWorktrees cleans memories scoped to worktrees that no longer exist.
+func cmdPruneWorktrees(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("prune-worktrees", out, errOut, &opts)
+	apply := fs.Bool("apply", false, "remove the stale scopes")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(ctx); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	report, err := a.PruneWorktrees(ctx, app.PruneWorktreesOptions{Apply: *apply})
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	count := 0
+	for _, e := range report.Entries {
+		fmt.Fprintf(out, "entry: %s@%s :: %s\n", e.Project, e.Worktree, e.Title)
+		count++
+	}
+	for _, name := range report.Notes {
+		fmt.Fprintf(out, "note: %s\n", name)
+		count++
+	}
+	for _, e := range report.Protected {
+		reason := "pinned"
+		if !e.Pinned {
+			reason = "hot"
+		}
+		fmt.Fprintf(out, "protected: %s@%s :: %s (%s)\n", e.Project, e.Worktree, e.Title, reason)
+	}
+	for _, name := range report.ProtectedNotes {
+		fmt.Fprintf(out, "protected note: %s\n", name)
+	}
+	if count == 0 {
+		if len(report.Protected) > 0 {
+			fmt.Fprintf(out, "\nnothing removable; %d protected item(s).\n", len(report.Protected))
+		} else {
+			fmt.Fprintln(out, "nothing to prune")
+		}
+		return 0
+	}
+	if !*apply {
+		fmt.Fprintf(out, "\n%d stale item(s). run again with --apply to remove them.\n", count)
+	}
 	return 0
 }
 
@@ -443,6 +560,14 @@ func cmdMigrate(ctx context.Context, opts config.Options, args []string, out, er
 	return 0
 }
 
+// worktreeValue maps the auto sentinel to an empty explicit id.
+func worktreeValue(raw string) string {
+	if raw == "auto" {
+		return ""
+	}
+	return raw
+}
+
 // splitTags splits a comma separated list of keywords.
 func splitTags(raw string) []string {
 	if strings.TrimSpace(raw) == "" {
@@ -472,6 +597,9 @@ Commands:
   search <query>       search the corpus
   brief                the profile, the rules, and optionally a project
   add                  record one durable memory
+  pin <title>          protect an entry from automated edits
+  unpin <title>        release an entry
+  prune-worktrees      remove memories scoped to deleted worktrees
   log                  the write log, newest first
   index                reconcile the corpus with the native projections
   install              link the tools to the store
@@ -496,8 +624,11 @@ Examples:
   %s search "neon"
   %s brief --project my-project
   %s add --scope lesson --title "Short title" --body "Rule... Why..."
+  %s add --scope lesson --team --title "Shared rule" --body "..."
+  %s pin "Short title"
+  %s prune-worktrees
   %s install
 `, version.Name, version.Name,
 		config.EnvHome, config.EnvVault, config.EnvSource,
-		version.Name, version.Name, version.Name, version.Name)
+		version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name)
 }

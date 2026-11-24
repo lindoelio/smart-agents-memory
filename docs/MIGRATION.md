@@ -20,6 +20,14 @@ smart-agents-memory index
 smart-agents-memory doctor
 ```
 
+## Opening a store written by a previous version
+
+The current build reads a note without `pinned`, `project` or `worktree` as
+unprotected and unscoped. An existing SQLite database gains the three columns
+and the `entries_project` index when it is opened; no `migrate` pass is
+needed. Run `smart-agents-memory index` afterwards to refresh the
+projections.
+
 ## What it changes
 
 | Before | After |

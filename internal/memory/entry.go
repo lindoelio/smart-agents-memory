@@ -78,6 +78,14 @@ type Entry struct {
 	Reason      string
 	Description string
 	Keywords    []string
+	// Pinned protects the entry from automated edits, imports, and
+	// consolidation. It is the corpus-owned state; the Qwen projection
+	// materializes it as the protected pinned/ directory.
+	Pinned bool
+	// Project is the repository or project slug the entry belongs to.
+	Project string
+	// Worktree is the linked git worktree identifier, when scoped to one.
+	Worktree string
 	// Extra keeps frontmatter keys this build does not know about, so a
 	// round-trip never silently drops what the user typed.
 	Extra map[string]string

@@ -102,6 +102,7 @@ smart-agents-memory add --scope lesson --team \
 smart-agents-memory recall --tree           # o router de categorias
 smart-agents-memory recall --query "teste flaky"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
+smart-agents-memory dream --deterministic-only
 smart-agents-memory mcp                     # ferramentas JSON-RPC via stdio
 smart-agents-memory pin "Título curto"       # proteger uma entrada curada
 smart-agents-memory unpin "Título curto"     # liberar de novo
@@ -114,6 +115,22 @@ smart-agents-memory path                    # onde está o store
 
 A superfície completa está na
 [referência da CLI](skills/smart-agents-memory/references/cli-reference.md).
+
+### LLM opcional
+
+`recall --llm` e a passagem semântica do `dream` usam um endpoint compatível
+com OpenAI. O `smart-llm-gateway` local é o padrão quando não há chave; a
+OpenAI é usada quando a variável da chave existe. A configuração guarda o
+**nome** da variável, nunca a chave:
+
+```json
+{
+  "llm_provider": "openai",
+  "llm_base_url": "http://127.0.0.1:8080/v1",
+  "llm_model": "gpt-4o-mini",
+  "llm_key_env": "SMART_AGENTS_MEMORY_LLM_API_KEY"
+}
+```
 
 ## Onde a memória mora
 

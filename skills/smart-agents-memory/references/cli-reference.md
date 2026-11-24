@@ -84,13 +84,23 @@ log records `unpin | <type> | <title>`. An entry physically stored under a
 
 Prints the write log, newest first.
 
-### `recall [--tree] [--category <list>] [--ref <list>] [--query <text>] [--limit N] [--max-chars N]`
+### `recall [--tree] [--category <list>] [--ref <list>] [--query <text>] [--llm] [--limit N] [--max-chars N]`
 
 Returns the memory tree router, a focused subtree, exact refs or a ranked
 query. `--tree` is the compact router; `--category` returns one or more
 subtrees; `--ref` fetches full bodies; `--query` ranks by title, keywords,
 category, usage scenarios, description and body, boosting the active project
-and worktree. The default limits are 5 entries and 12,000 characters.
+and worktree. `--llm` lets the configured OpenAI-compatible model select the
+refs; every returned ref is validated. The default limits are 5 entries and
+12,000 characters.
+
+### `dream [--dry-run] [--deterministic-only] [--min-dirty N]`
+
+Consolidates the cold corpus. The deterministic pass deduplicates and
+backfills categories/descriptions; the optional LLM pass merges or updates
+groups. `--deterministic-only` skips the model, `--dry-run` reports without
+writing, and `--min-dirty` skips a run below the mutation threshold. Pinned
+and hot entries are never modified.
 
 ### `mcp`
 
@@ -141,3 +151,7 @@ Prints the version.
 | `SMART_AGENTS_MEMORY_VAULT` | Backend |
 | `SMART_AGENTS_MEMORY_DATABASE` | Database of the SQLite gateway |
 | `SMART_AGENTS_MEMORY_SOURCE` | Source recorded on new entries |
+| `SMART_AGENTS_MEMORY_LLM_PROVIDER` | LLM adapter (default `openai`) |
+| `SMART_AGENTS_MEMORY_LLM_URL` | OpenAI-compatible base URL |
+| `SMART_AGENTS_MEMORY_LLM_MODEL` | Model name |
+| `SMART_AGENTS_MEMORY_LLM_KEY_ENV` | Name of the variable holding the key |

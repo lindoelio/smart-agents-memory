@@ -56,6 +56,7 @@ smart-agents-memory recall --tree           # the category router
 smart-agents-memory recall --query "flaky test"
 smart-agents-memory recall --category testing_standard
 smart-agents-memory recall --ref "lesson:a-flaky-test"
+smart-agents-memory dream --deterministic-only
 smart-agents-memory search "flutter" --limit 5
 smart-agents-memory path                    # where the store lives
 ```
@@ -136,6 +137,14 @@ Use `recall --tree` to see the map, `--category` for a focused subtree,
 `--query` for ranked context and `--ref` for an exact body. The MCP server
 exposes the same operations as `memory_tree`, `memory_recall`,
 `memory_search`, `memory_brief` and `memory_add`.
+
+### Consolidation
+
+`dream` deduplicates cold entries, backfills categories and descriptions and,
+when an LLM is configured, merges related entries. Pinned and hot entries are
+never touched. Use `--deterministic-only` to stay offline and `--dry-run` to
+inspect the result first. `recall --llm` uses the same optional client to
+select refs from a bounded manifest.
 
 ### Project and worktree scope
 

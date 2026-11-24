@@ -26,6 +26,7 @@ flowchart TB
     TEAM["Team store<br/>internal/teammemory"]
     SG["Secret scan<br/>internal/secretguard"]
     PORT["Port<br/>internal/vault"]
+    LLMPORT["Port<br/>internal/llm"]
     REC["Reconciliation<br/>internal/reconcile"]
     PROJ["Local projections<br/>internal/projection"]
 
@@ -37,6 +38,7 @@ flowchart TB
     APP --> TEAM
     APP --> SG
     APP --> PORT
+    APP --> LLMPORT
     APP --> REC
     APP --> PROJ
     REC --> DOM
@@ -82,6 +84,7 @@ Supporting packages:
 | `internal/secretguard` | The high-confidence credential scan used by every memory write |
 | `internal/tree` | The deterministic, budgeted memory tree and focused subtree |
 | `internal/teammemory` | The Git-backed `.agents/memory/` store and its Qwen projection |
+| `internal/llm` | The optional JSON completion port; `internal/llm/openai` is the adapter |
 | `internal/mcp` | The JSON-RPC stdio entrypoint and its five memory tools |
 | `internal/reconcile` | Import from the native stores, reconcile the hot tier and export the projections |
 | `internal/projection` | The local directory that holds the native stores, and the watermark of the last projection |
@@ -202,7 +205,19 @@ category keeps at most 12 keywords.
 bodies, and `--query` ranks by title, keywords, category, scenarios,
 description and body, boosting the active project and worktree. The same use
 case serves the MCP tools: `memory_tree` (router and revision),
-`memory_recall`, `memory_search`, `memory_brief` and `memory_add`.
+`memory_recall`, `memory_search`, `memory_brief` and `memory_add`. With
+`--llm`, the manifest is bounded and every returned ref is validated.
+
+## Consolidation
+
+`dream` has two stages. The deterministic pass deduplicates unpinned cold
+entries by normalized title and body, unions keywords and usage scenarios,
+and backfills categories and descriptions. The optional LLM pass receives
+groups of at least two entries and returns `merge`/`update` operations; a
+validation gate rejects pinned or hot targets, missing sources, empty or
+non-English bodies, secrets and unknown refs. The lock is exclusive, with a
+15-minute stale-lock recovery. The state file records dirty mutations,
+last run and status.
 
 ## Reconciliation
 

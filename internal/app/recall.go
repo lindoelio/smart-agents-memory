@@ -2,13 +2,18 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/lindoelio/smart-agents-memory/internal/llm"
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/tree"
 )
+
+// MaxModelManifestBytes bounds the manifest sent to an LLM selector.
+const MaxModelManifestBytes = 25000
 
 // RecallOptions selects the structured recall mode.
 type RecallOptions struct {
@@ -26,6 +31,8 @@ type RecallOptions struct {
 	MaxChars int
 	// CWD is where the active scope is resolved.
 	CWD string
+	// LLM lets the configured model select the ranked refs.
+	LLM bool
 }
 
 // RecallResult is the rendered recall and its tree revision.
@@ -88,9 +95,17 @@ func (a *App) Recall(ctx context.Context, opts RecallOptions) (RecallResult, err
 		}
 		return result, nil
 	case strings.TrimSpace(opts.Query) != "":
-		ranked := rankRecall(items, opts.Query, opts.Categories, opts.CWD)
-		if len(ranked) > opts.Limit {
-			ranked = ranked[:opts.Limit]
+		var ranked []recallItem
+		if opts.LLM {
+			ranked, err = a.selectWithLLM(ctx, filterRecallItems(items, opts.Categories), opts.Query, opts.Limit)
+			if err != nil {
+				return result, err
+			}
+		} else {
+			ranked = rankRecall(items, opts.Query, opts.Categories, opts.CWD)
+			if len(ranked) > opts.Limit {
+				ranked = ranked[:opts.Limit]
+			}
 		}
 		for _, item := range ranked {
 			result.Refs = append(result.Refs, tree.Ref(item.entry, item.team))
@@ -124,6 +139,100 @@ func (a *App) recallItems(ctx context.Context, cwd string) ([]recallItem, error)
 		}
 	}
 	return items, nil
+}
+
+func filterRecallItems(items []recallItem, categories []string) []recallItem {
+	if len(categories) == 0 {
+		return items
+	}
+	wanted := map[string]bool{}
+	for _, category := range categories {
+		wanted[category] = true
+	}
+	var out []recallItem
+	for _, item := range items {
+		if wanted[memory.InferCategory(item.entry)] {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+type manifestItem struct {
+	Ref            string   `json:"ref"`
+	Title          string   `json:"title"`
+	Description    string   `json:"description,omitempty"`
+	Category       string   `json:"category"`
+	Keywords       []string `json:"keywords,omitempty"`
+	UsageScenarios []string `json:"usage_scenarios,omitempty"`
+}
+
+// selectWithLLM asks the configured model to choose refs from a bounded
+// manifest. Every returned ref is validated against that manifest.
+func (a *App) selectWithLLM(ctx context.Context, items []recallItem, query string, limit int) ([]recallItem, error) {
+	if a.LLM == nil {
+		return nil, fmt.Errorf("LLM recall is not configured")
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	manifest := make([]manifestItem, 0, len(items))
+	byRef := map[string]recallItem{}
+	for _, item := range items {
+		ref := tree.Ref(item.entry, item.team)
+		byRef[ref] = item
+		manifest = append(manifest, manifestItem{
+			Ref: ref, Title: item.entry.Title, Description: item.entry.Description,
+			Category: memory.InferCategory(item.entry), Keywords: item.entry.Keywords,
+			UsageScenarios: item.entry.UsageScenarios,
+		})
+	}
+	// Drop tail entries until the manifest fits the model budget.
+	for len(manifest) > 0 {
+		data, err := json.Marshal(manifest)
+		if err != nil {
+			return nil, err
+		}
+		if len(data) <= MaxModelManifestBytes {
+			break
+		}
+		manifest = manifest[:len(manifest)-1]
+	}
+	if len(manifest) == 0 {
+		return nil, fmt.Errorf("the recall manifest does not fit the model budget")
+	}
+	data, err := json.Marshal(manifest)
+	if err != nil {
+		return nil, err
+	}
+	var selected struct {
+		Refs []string `json:"refs"`
+	}
+	err = a.LLM.CompleteJSON(ctx, llm.Request{
+		SystemPrompt: "Select the memories relevant to the user's query. Return exactly {\"refs\":[\"...\"]} using only refs from the manifest. Do not invent a ref.",
+		UserPrompt:   "Query: " + query + "\nManifest:\n" + string(data),
+		Temperature:  0,
+	}, &selected)
+	if err != nil {
+		return nil, err
+	}
+	var out []recallItem
+	seen := map[string]bool{}
+	for _, ref := range selected.Refs {
+		if seen[ref] {
+			continue
+		}
+		item, ok := byRef[ref]
+		if !ok {
+			return nil, fmt.Errorf("the model returned an unknown memory ref %q", ref)
+		}
+		seen[ref] = true
+		out = append(out, item)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func rankRecall(items []recallItem, query string, categories []string, cwd string) []recallItem {

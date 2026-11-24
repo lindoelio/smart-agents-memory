@@ -28,6 +28,16 @@ const (
 	EnvSource = "SMART_AGENTS_MEMORY_SOURCE"
 	// EnvDatabase overrides the SQLite database path.
 	EnvDatabase = "SMART_AGENTS_MEMORY_DATABASE"
+	// EnvLLMProvider overrides the LLM adapter.
+	EnvLLMProvider = "SMART_AGENTS_MEMORY_LLM_PROVIDER"
+	// EnvLLMBaseURL overrides the LLM base URL.
+	EnvLLMBaseURL = "SMART_AGENTS_MEMORY_LLM_URL"
+	// EnvLLMModel overrides the LLM model.
+	EnvLLMModel = "SMART_AGENTS_MEMORY_LLM_MODEL"
+	// EnvLLMKeyEnv names the variable that holds the LLM key.
+	EnvLLMKeyEnv = "SMART_AGENTS_MEMORY_LLM_KEY_ENV"
+	// DefaultLLMKeyEnv is the default variable holding the LLM key.
+	DefaultLLMKeyEnv = "SMART_AGENTS_MEMORY_LLM_API_KEY"
 )
 
 // DefaultPath is where the configuration file lives.
@@ -58,6 +68,14 @@ type File struct {
 	// ProjectionRoot is where the native projections are materialized,
 	// for the gateways that are not a local directory.
 	ProjectionRoot string `json:"projection_root,omitempty"`
+	// LLMProvider is the JSON client adapter (default openai).
+	LLMProvider string `json:"llm_provider,omitempty"`
+	// LLMBaseURL is the OpenAI-compatible base URL.
+	LLMBaseURL string `json:"llm_base_url,omitempty"`
+	// LLMModel is the model name.
+	LLMModel string `json:"llm_model,omitempty"`
+	// LLMKeyEnv is the environment variable holding the key, never the key.
+	LLMKeyEnv string `json:"llm_key_env,omitempty"`
 }
 
 // Load reads the configuration file. A missing file is not an error.
@@ -122,6 +140,10 @@ func Resolve(opts Options) (vault.Config, string, error) {
 		MemoryHome:     file.MemoryHome,
 		SQLitePath:     file.SQLitePath,
 		ProjectionRoot: file.ProjectionRoot,
+		LLMProvider:    firstNonEmpty(os.Getenv(EnvLLMProvider), file.LLMProvider, "openai"),
+		LLMBaseURL:     firstNonEmpty(os.Getenv(EnvLLMBaseURL), file.LLMBaseURL),
+		LLMModel:       firstNonEmpty(os.Getenv(EnvLLMModel), file.LLMModel),
+		LLMKeyEnv:      firstNonEmpty(os.Getenv(EnvLLMKeyEnv), file.LLMKeyEnv, DefaultLLMKeyEnv),
 	}
 
 	if home := firstNonEmpty(opts.MemoryHome, os.Getenv(EnvHome)); home != "" {

@@ -13,6 +13,23 @@ func TestNotionIsRejected(t *testing.T) {
 	}
 }
 
+func TestLLMConfigurationUsesTheEnvironmentNames(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(EnvLLMProvider, "openai")
+	t.Setenv(EnvLLMBaseURL, "http://127.0.0.1:9999/v1")
+	t.Setenv(EnvLLMModel, "local-model")
+	t.Setenv(EnvLLMKeyEnv, "MY_LOCAL_KEY")
+	cfg, _, err := Resolve(Options{Vault: "disk", ConfigPath: filepath.Join(home, "missing.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMProvider != "openai" || cfg.LLMBaseURL != "http://127.0.0.1:9999/v1" ||
+		cfg.LLMModel != "local-model" || cfg.LLMKeyEnv != "MY_LOCAL_KEY" {
+		t.Fatalf("the llm configuration is %+v", cfg)
+	}
+}
+
 func TestAMissingFileStoreUsesTheDefaultPath(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

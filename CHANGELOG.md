@@ -37,6 +37,12 @@ All notable changes to this project are documented here. The format follows
 - **MCP server.** `smart-agents-memory mcp` exposes `memory_tree`,
   `memory_recall`, `memory_search`, `memory_brief` and `memory_add` over
   JSON-RPC stdio.
+- **Optional LLM and Dream.** `internal/llm` is a pluggable JSON completion
+  port with an OpenAI-compatible adapter. `recall --llm` validates selected
+  refs, and `dream` runs deterministic deduplication/backfill before an
+  optional fail-closed LLM merge/update pass. Pinned and hot entries are
+  never modified; the API key is referenced by environment variable, never
+  stored.
 
 ## [0.2.0] — 2026-11-11
 

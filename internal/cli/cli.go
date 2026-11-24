@@ -16,6 +16,7 @@ import (
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/config"
+	llmopenai "github.com/lindoelio/smart-agents-memory/internal/llm/openai"
 	"github.com/lindoelio/smart-agents-memory/internal/mcp"
 	"github.com/lindoelio/smart-agents-memory/internal/version"
 )
@@ -94,6 +95,8 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return cmdRecall(ctx, opts, commandArgs, out, errOut)
 	case "mcp":
 		return cmdMCP(ctx, opts, commandArgs, out, errOut)
+	case "dream":
+		return cmdDream(ctx, opts, commandArgs, out, errOut)
 	case "log":
 		return cmdLog(ctx, opts, commandArgs, out, errOut)
 	case "index":
@@ -119,7 +122,14 @@ func build(opts config.Options, out, errOut io.Writer) (*app.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	return app.New(cfg, configPath, out, errOut)
+	a, err := app.New(cfg, configPath, out, errOut)
+	if err != nil {
+		return nil, err
+	}
+	if cfg.LLMBaseURL != "" || cfg.LLMModel != "" || os.Getenv(cfg.LLMKeyEnv) != "" {
+		a.LLM = llmopenai.New(cfg.LLMBaseURL, cfg.LLMModel, cfg.LLMKeyEnv)
+	}
+	return a, nil
 }
 
 // registerGlobals adds the global flags to a flag set.
@@ -409,6 +419,7 @@ func cmdRecall(ctx context.Context, opts config.Options, args []string, out, err
 	category := fs.String("category", "", "category list, comma separated")
 	ref := fs.String("ref", "", "memory refs, comma separated")
 	query := fs.String("query", "", "rank memories by this query")
+	llmSelect := fs.Bool("llm", false, "let the configured llm select the ranked refs")
 	limit := fs.Int("limit", 5, "maximum number of ranked memories")
 	maxChars := fs.Int("max-chars", 12000, "maximum output characters")
 	if err := fs.Parse(args); err != nil {
@@ -426,6 +437,7 @@ func cmdRecall(ctx context.Context, opts config.Options, args []string, out, err
 		Query:      *query,
 		Limit:      *limit,
 		MaxChars:   *maxChars,
+		LLM:        *llmSelect,
 	})
 	if err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
@@ -452,6 +464,40 @@ func cmdMCP(ctx context.Context, opts config.Options, args []string, out, errOut
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
+	return 0
+}
+
+// cmdDream consolidates the cold corpus.
+func cmdDream(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("dream", out, errOut, &opts)
+	dryRun := fs.Bool("dry-run", false, "report without writing")
+	deterministic := fs.Bool("deterministic-only", false, "skip the llm pass")
+	minDirty := fs.Int("min-dirty", 0, "minimum dirty mutations")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(ctx); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	report, err := a.Dream(ctx, app.DreamOptions{
+		DryRun: *dryRun, DeterministicOnly: *deterministic, MinDirty: *minDirty,
+	})
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	suffix := ""
+	if report.DryRun {
+		suffix = " (dry run)"
+	}
+	fmt.Fprintf(out, "dream: merged=%d updated=%d deleted=%d backfilled=%d%s\n",
+		report.Merged, report.Updated, report.Deleted, report.Backfilled, suffix)
 	return 0
 }
 
@@ -684,6 +730,7 @@ Commands:
   prune-worktrees      remove memories scoped to deleted worktrees
   recall               memory tree, subtree, refs or ranked query
   mcp                  serve the MCP tools over stdin/stdout
+  dream                consolidate the cold memory
   log                  the write log, newest first
   index                reconcile the corpus with the native projections
   install              link the tools to the store
@@ -712,8 +759,9 @@ Examples:
   %s pin "Short title"
   %s prune-worktrees
   %s recall --tree
+  %s dream --deterministic-only
   %s install
 `, version.Name, version.Name,
 		config.EnvHome, config.EnvVault, config.EnvSource,
-		version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name)
+		version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name, version.Name)
 }

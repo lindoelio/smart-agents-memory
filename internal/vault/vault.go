@@ -142,6 +142,14 @@ type Config struct {
 	SQLitePath string `json:"sqlite_path,omitempty"`
 	// ProjectionRoot is where the native projections are materialized.
 	ProjectionRoot string `json:"projection_root,omitempty"`
+	// LLMProvider is the JSON client adapter (default openai).
+	LLMProvider string `json:"llm_provider,omitempty"`
+	// LLMBaseURL is the OpenAI-compatible base URL.
+	LLMBaseURL string `json:"llm_base_url,omitempty"`
+	// LLMModel is the model name.
+	LLMModel string `json:"llm_model,omitempty"`
+	// LLMKeyEnv is the environment variable holding the key, never the key.
+	LLMKeyEnv string `json:"llm_key_env,omitempty"`
 }
 
 var registry = map[string]Factory{}

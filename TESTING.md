@@ -65,12 +65,14 @@ toolchain is required.
 | `internal/gitscope` | `gitscope_test.go` | Standard checkout, linked worktree, commondir fallback and active worktrees |
 | `internal/secretguard` | `secretguard_test.go` | Every credential rule, ordinary text and zero-value echo |
 | `internal/tree` | `tree_test.go` | Category grouping, keyword limits, deterministic revision, router budget and focused subtree |
+| `internal/llm/openai` | `openai_test.go` | The OpenAI request, fenced JSON, HTTP failure and extraction |
 | `internal/mcp` | `mcp_test.go` | JSON-RPC initialize, tools/list, all five tools, the tree revision and an unknown tool |
 | `internal/teammemory` | `teammemory_test.go` | Team writes, Qwen projection, index, secret and symlink rejection |
 | `internal/vault` | `vault_test.go` | Every file gateway carries the same corpus; the corpus travels between backends; discovery, search, log, modification time, protection by path, project and worktree notes |
 | `internal/vault/sqlite` | `sqlite_test.go` | Rename, remove, project notes, literal search, the pinned and scope column migrations |
 | `internal/native` | `native_test.go` | The topic, agent, user and Qwen formats round trip; the hot block is stable |
 | `internal/app` | `app_test.go` | Add, append, deduplication, index, the hot tier, install, doctor, brief, migrate, SQLite install, pinned writes, scope auto-detection, worktree pruning, team writes, team-only brief/search, recall and the secret guard |
+| `internal/app` | `dream_test.go` | Deterministic dedupe and backfill on every gateway, lock recovery, LLM merge, pinned/secret rejection and min-dirty |
 | `internal/cli` | `cli_test.go` | Help, version, search, path, exit codes, legacy flags, a rejected backend, pinned commands, worktree flags, prune-worktrees, team writes and recall |
 | `internal/config` | `config_test.go` | The default store path, and the error of a backend that left the product |
 | `internal/link` | `link_test.go` | A second overwrite keeps the first backup |
@@ -111,6 +113,7 @@ test at the level that proves the behavior.
 | A repository or worktree scope | The resolver, the round trip, auto-detection in add and brief, stale report and prune |
 | A team write or a secret scan | The team store round trip, the Qwen projection, the symlink boundary and every SecretGuard rule |
 | A taxonomy or recall mode | The category round trip, tree grouping and budget, refs, ranking and MCP tools |
+| Dream consolidation | Deterministic dedupe/backfill, lock recovery and the fail-closed LLM operation gate |
 | A command or a flag | `cli_test.go`: the exit code and the output |
 | The installation | The links, the backup of an overwritten file, and `doctor` |
 | The migration | The dry run, the apply, and the idempotency |

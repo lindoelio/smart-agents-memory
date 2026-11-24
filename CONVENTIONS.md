@@ -20,6 +20,8 @@ internal/tree              the memory tree snapshot, router and subtree
 internal/gitscope          the repository and linked-worktree resolver
 internal/secretguard       the high-confidence credential scan
 internal/teammemory        the Git-backed team store and Qwen projection
+internal/llm               the optional JSON completion port
+internal/llm/openai        the OpenAI-compatible adapter
 internal/native            the projection formats of each tool
 internal/reconcile         the rule that keeps the corpus and the projections in step
 internal/projection        the local native store

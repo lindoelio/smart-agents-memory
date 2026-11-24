@@ -29,7 +29,7 @@ func TestTheHelpListsTheCommands(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the exit code is %d", code)
 	}
-	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "log", "index", "install", "doctor", "path", "migrate", "version"} {
+	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "dream", "log", "index", "install", "doctor", "path", "migrate", "version"} {
 		if !strings.Contains(out, command) {
 			t.Errorf("the help does not mention %q", command)
 		}
@@ -114,6 +114,22 @@ func TestAddPinnedFlag(t *testing.T) {
 	pinned := filepath.Join(root, "native", "qwen", "pinned", "a-pinned-rule.md")
 	if _, err := os.Stat(pinned); err != nil {
 		t.Fatalf("the pinned projection was not written: %v", err)
+	}
+}
+
+func TestDreamCommandBackfills(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	if code, _, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
+		"add", "--scope", "lesson", "--title", "A plain lesson", "--body", "A plain body."); code != 0 {
+		t.Fatalf("cannot create the entry: %s", errOut)
+	}
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "dream", "--deterministic-only")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "backfilled=1") {
+		t.Fatalf("the dream output is %q", out)
 	}
 }
 

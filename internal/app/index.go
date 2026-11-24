@@ -75,6 +75,9 @@ func (a *App) index(ctx context.Context, opts indexOptions) (IndexReport, error)
 	}
 	imported += hotAdded
 	updated += hotUpdated
+	if imported+updated > 0 {
+		a.bumpDirty()
+	}
 	corpus, err = a.Vault.Entries(ctx)
 	if err != nil {
 		return report, err

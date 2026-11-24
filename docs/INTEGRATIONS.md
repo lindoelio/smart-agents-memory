@@ -13,6 +13,15 @@ problems.
 
 Neither carries heavy content.
 
+## The optional LLM
+
+`recall --llm` and the semantic pass of `dream` use an OpenAI-compatible
+endpoint. The adapter defaults to `http://127.0.0.1:8080/v1` for a local
+`smart-llm-gateway`, or to `https://api.openai.com/v1` when the key
+environment variable is set. The configuration stores the variable name,
+never the key. Without one, `dream` runs deterministically; `recall --llm`
+reports that no client is configured.
+
 ## The links
 
 `smart-agents-memory install` creates seventeen symlinks.

@@ -18,6 +18,8 @@ Ports and adapters, on both sides.
   know the gateway.
 - **The port** (`internal/vault`) is an interface, a registry, and a
   configuration. It never imports an adapter.
+- **The LLM port** (`internal/llm`) is an interface; the OpenAI-compatible
+  adapter lives behind it in `internal/llm/openai`.
 - **The gateways** (`internal/vault/*`) register themselves from `init`.
 - **The domain** (`internal/memory`, `internal/native`, `internal/gitscope`,
   `internal/tree`, `internal/secretguard`, `internal/teammemory`) never imports

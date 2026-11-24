@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/config"
+	"github.com/lindoelio/smart-agents-memory/internal/llm"
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 	"github.com/lindoelio/smart-agents-memory/internal/projection"
 	"github.com/lindoelio/smart-agents-memory/internal/reconcile"
@@ -37,6 +38,9 @@ type App struct {
 	// Out and Err are where the output goes.
 	Out io.Writer
 	Err io.Writer
+	// LLM is the optional JSON completion client. It is nil when the
+	// deployment did not configure one.
+	LLM llm.Client
 }
 
 // New builds the application for a configuration.
@@ -431,6 +435,7 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 				if err := a.Vault.Update(ctx, e); err != nil {
 					return "", err
 				}
+				a.bumpDirty()
 				if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s (pinned)", scope, e.Title, source)); err != nil {
 					return "", err
 				}
@@ -471,6 +476,7 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 		if err := a.Vault.Update(ctx, e); err != nil {
 			return "", err
 		}
+		a.bumpDirty()
 		suffix := " (append)"
 		if wasPinned {
 			suffix = " (append, forced on pinned)"
@@ -506,6 +512,7 @@ func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	a.bumpDirty()
 	if err := a.Vault.AppendLog(ctx, fmt.Sprintf("add | %s | %s | %s", scope, stored.Title, source)); err != nil {
 		return "", err
 	}

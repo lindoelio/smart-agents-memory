@@ -36,11 +36,12 @@ here, and it is synthetic.
 
 ## Secrets
 
-- **No gateway talks to the network.** The product makes no HTTP request,
-  so it holds no token and needs none. The environment variables are paths
-  and names, never credentials.
+- **The store gateways do not talk to the network.** The product's memory
+  gateways make no HTTP request. The optional LLM client does, and only to
+  the configured OpenAI-compatible base URL.
 - **No secret is ever written to the configuration file.** The file holds
-  the backend and the paths of the store.
+  the backend, the paths and the **name** of the LLM key variable, never the
+  key itself.
 - **No secret is ever written to the store.** The write log records what
   changed and where it came from, never a credential.
 - **SecretGuard blocks high-confidence credentials.** `add`, the native

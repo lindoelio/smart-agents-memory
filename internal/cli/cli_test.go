@@ -468,6 +468,53 @@ func TestSearchPrefixesTeamHits(t *testing.T) {
 	}
 }
 
+func TestBriefAndSearchWorkWithOnlyTeamMemory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repo := newCLIRepo(t)
+	t.Chdir(repo)
+	root := filepath.Join(t.TempDir(), "missing-store")
+	if code, _, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
+		"add", "--scope", "lesson", "--team",
+		"--title", "A shared rule", "--body", "The shared body."); code != 0 {
+		t.Fatalf("cannot create the team entry: %s", errOut)
+	}
+
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "brief")
+	if code != 0 {
+		t.Fatalf("brief without a private store: %d %s", code, errOut)
+	}
+	if !strings.Contains(out, "## Team Memory (repo)") || !strings.Contains(out, "The shared body.") {
+		t.Fatalf("the brief lost the team memory:\n%s", out)
+	}
+
+	code, out, errOut = run(t, "--vault", "obsidian", "--memory-home", root, "search", "shared")
+	if code != 0 {
+		t.Fatalf("search without a private store: %d %s", code, errOut)
+	}
+	if !strings.Contains(out, "[team] .agents/memory/corpus/lesson/a-shared-rule.md") {
+		t.Fatalf("the search lost the team hit:\n%s", out)
+	}
+}
+
+func TestBriefGlobalShowsTeamMemory(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	repo := newCLIRepo(t)
+	t.Chdir(repo)
+	root := filepath.Join(t.TempDir(), "missing-store")
+	if code, _, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
+		"add", "--scope", "lesson", "--team",
+		"--title", "A shared rule", "--body", "The shared body."); code != 0 {
+		t.Fatalf("cannot create the team entry: %s", errOut)
+	}
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "brief", "--global")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "## Team Memory (repo)") {
+		t.Fatalf("--global hid the team memory:\n%s", out)
+	}
+}
+
 func TestNotionIsRejected(t *testing.T) {
 	code, _, errOut := run(t, "--vault", "notion", "path")
 	if code == 0 || !strings.Contains(errOut, "0.2.0") {

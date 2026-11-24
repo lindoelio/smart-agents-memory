@@ -168,10 +168,6 @@ func cmdSearch(ctx context.Context, opts config.Options, args []string, out, err
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if err := a.RequireStore(ctx); err != nil {
-		fmt.Fprintln(errOut, "error: "+err.Error())
-		return 1
-	}
 	return searchAndPrint(ctx, a, query, *limit, out, errOut)
 }
 
@@ -224,10 +220,6 @@ func cmdBrief(ctx context.Context, opts config.Options, args []string, out, errO
 	})
 	a, err := build(opts, out, errOut)
 	if err != nil {
-		fmt.Fprintln(errOut, "error: "+err.Error())
-		return 1
-	}
-	if err := a.RequireStore(ctx); err != nil {
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}

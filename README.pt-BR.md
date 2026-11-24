@@ -88,7 +88,7 @@ SQLite se preferir um único arquivo.
 ```bash
 smart-agents-memory search "neon"           # encontrar algo
 smart-agents-memory brief                   # o hot tier, o repo/worktree ativo
-smart-agents-memory brief --global          # ignorar o diretório atual
+smart-agents-memory brief --global          # ignora a detecção de projeto/worktree
 smart-agents-memory brief --project meu-app # + as notas de um projeto
 smart-agents-memory add --scope lesson \
   --title "Título curto" \

@@ -85,14 +85,18 @@ func (a *App) HotContent() string {
 	return string(data)
 }
 
-// Search looks for the query in the store.
+// Search looks for the query in the private store and in team memory.
 func (a *App) Search(ctx context.Context, query string, limit int) ([]vault.Hit, error) {
 	if strings.TrimSpace(query) == "" {
 		return nil, fmt.Errorf("empty query")
 	}
-	hits, err := a.Vault.Search(ctx, query, limit)
-	if err != nil {
-		return nil, err
+	var hits []vault.Hit
+	if a.Vault != nil && a.Vault.Ready(ctx) == nil {
+		private, err := a.Vault.Search(ctx, query, limit)
+		if err != nil {
+			return nil, err
+		}
+		hits = append(hits, private...)
 	}
 	team, err := a.teamSearch(ctx, query, limit)
 	if err != nil {
@@ -149,15 +153,20 @@ func (a *App) Brief(ctx context.Context, opts BriefOptions) (string, error) {
 	if hot := stripFrontmatter(a.HotContent()); strings.TrimSpace(hot) != "" {
 		parts = append(parts, strings.TrimRight(hot, "\n"))
 	}
-	corpus, err := a.Vault.Entries(ctx)
-	if err != nil {
-		return "", err
-	}
-	if index := renderBriefIndex(corpus); index != "" {
-		parts = append(parts, index)
+	vaultReady := a.Vault != nil && a.Vault.Ready(ctx) == nil
+	var corpus []memory.Entry
+	if vaultReady {
+		var err error
+		corpus, err = a.Vault.Entries(ctx)
+		if err != nil {
+			return "", err
+		}
+		if index := renderBriefIndex(corpus); index != "" {
+			parts = append(parts, index)
+		}
 	}
 
-	if project != "" {
+	if vaultReady && project != "" {
 		holder, ok := a.Vault.(vault.ProjectNotes)
 		if !ok {
 			return "", fmt.Errorf("the %s gateway does not keep project notes", a.Vault.Kind())
@@ -179,7 +188,7 @@ func (a *App) Brief(ctx context.Context, opts BriefOptions) (string, error) {
 		}
 	}
 
-	if worktree != "" {
+	if vaultReady && worktree != "" {
 		holder, ok := a.Vault.(vault.WorktreeNotes)
 		if !ok {
 			return "", fmt.Errorf("the %s gateway does not keep worktree notes", a.Vault.Kind())
@@ -199,14 +208,12 @@ func (a *App) Brief(ctx context.Context, opts BriefOptions) (string, error) {
 		}
 	}
 
-	if !opts.Global {
-		team, info, ok, err := a.teamEntries(ctx, opts.CWD)
-		if err != nil {
-			return "", err
-		}
-		if ok && len(team) > 0 {
-			parts = append(parts, "\n## Team Memory ("+info+")"+renderEntries(team))
-		}
+	team, info, ok, err := a.teamEntries(ctx, opts.CWD)
+	if err != nil {
+		return "", err
+	}
+	if ok && len(team) > 0 {
+		parts = append(parts, "\n## Team Memory ("+info+")"+renderEntries(team))
 	}
 
 	return strings.Join(parts, "\n"), nil

@@ -68,7 +68,7 @@ toolchain is required.
 | `internal/vault` | `vault_test.go` | Every file gateway carries the same corpus; the corpus travels between backends; discovery, search, log, modification time, protection by path, project and worktree notes |
 | `internal/vault/sqlite` | `sqlite_test.go` | Rename, remove, project notes, literal search, the pinned and scope column migrations |
 | `internal/native` | `native_test.go` | The topic, agent, user and Qwen formats round trip; the hot block is stable |
-| `internal/app` | `app_test.go` | Add, append, deduplication, index, the hot tier, install, doctor, brief, migrate, SQLite install, pinned writes, scope auto-detection, worktree pruning, team writes and the secret guard |
+| `internal/app` | `app_test.go` | Add, append, deduplication, index, the hot tier, install, doctor, brief, migrate, SQLite install, pinned writes, scope auto-detection, worktree pruning, team writes, team-only brief/search and the secret guard |
 | `internal/cli` | `cli_test.go` | Help, version, search, path, exit codes, legacy flags, a rejected backend, pinned commands, worktree flags, prune-worktrees and team writes |
 | `internal/config` | `config_test.go` | The default store path, and the error of a backend that left the product |
 | `internal/link` | `link_test.go` | A second overwrite keeps the first backup |

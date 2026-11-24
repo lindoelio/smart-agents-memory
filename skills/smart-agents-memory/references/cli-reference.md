@@ -29,8 +29,9 @@ the index does not carry cold bodies. It also detects the repository and
 linked worktree from the working directory and prints `## Project` and
 `## Worktree` sections with the bodies of the scoped entries. Inside a Git
 repository it adds `## Team Memory (<repo-slug>)`. `--project` adds the
-notes of another project; `--global` disables auto-detection, including the
-team section. With `--query` it also runs the search.
+notes of another project; `--global` disables project/worktree
+auto-detection, but the team store is still read. With `--query` it also
+runs the search.
 
 ### `add --scope <type> --title <title> --body <body>`
 

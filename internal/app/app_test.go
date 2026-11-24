@@ -944,6 +944,58 @@ func TestAHotNativeEditWithASecretIsSkipped(t *testing.T) {
 	}
 }
 
+func TestBriefAndSearchWorkWithOnlyTeamMemory(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A shared rule", Body: "The shared body.",
+		Team: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.RemoveAll(h.root); err != nil {
+		t.Fatal(err)
+	}
+
+	text, err := h.app.Brief(ctx, app.BriefOptions{CWD: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "## Team Memory ("+memory.Slugify("repo")+")") ||
+		!strings.Contains(text, "The shared body.") {
+		t.Fatalf("the brief without a private store is wrong:\n%s", text)
+	}
+
+	t.Chdir(repo)
+	hits, err := h.app.Search(ctx, "shared", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(hits) == 0 || !strings.HasPrefix(hits[0].Path, "[team] ") {
+		t.Fatalf("the team search without a private store is %+v", hits)
+	}
+}
+
+func TestBriefGlobalStillCarriesTeamMemory(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A shared rule", Body: "The shared body.",
+		Team: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	text, err := h.app.Brief(ctx, app.BriefOptions{CWD: repo, Global: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(text, "## Team Memory ("+memory.Slugify("repo")+")") {
+		t.Fatalf("--global hid team memory:\n%s", text)
+	}
+}
+
 func TestAddAutoDetectsTheRepositoryScope(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	ctx := context.Background()

@@ -90,7 +90,7 @@ If `.gitignore` excludes `.agents`, re-include `.agents/memory/`.
 ```bash
 smart-agents-memory search "neon"           # find something
 smart-agents-memory brief                   # the hot tier, the active repo/worktree
-smart-agents-memory brief --global          # ignore the working directory
+smart-agents-memory brief --global          # ignore project/worktree detection
 smart-agents-memory brief --project my-app  # + the notes of a project
 smart-agents-memory add --scope lesson \
   --title "Short title" \

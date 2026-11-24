@@ -25,7 +25,8 @@ All notable changes to this project are documented here. The format follows
 - **Team memory.** `add --team` writes to the Git-backed `.agents/memory/`,
   with an optional `.qwen/team-memory/` projection. `brief` adds
   `## Team Memory (<repo-slug>)` and `search` marks team hits with
-  `[team] `. The directory refuses a symlink that escapes the worktree.
+  `[team] `; both work with only a team store, without a private vault.
+  The directory refuses a symlink that escapes the worktree.
 - **SecretGuard.** Every private and team write, and every native import,
   scans for high-confidence credentials. A match rejects or skips the write
   and names only the rule, never the matched value.

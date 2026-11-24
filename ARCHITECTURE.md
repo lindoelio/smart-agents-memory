@@ -164,6 +164,7 @@ working directory. It reads `.git` and `commondir`; it does not run `git`.
 `--worktree auto` adds the worktree. `brief` resolves both automatically,
 unless `--global` is passed. The output is the hot tier, the global index,
 `## Project: <slug>` and, when there is one, `## Worktree: <slug>@<id>`.
+The team store is a separate section and is read even with `--global`.
 
 A worktree that no longer exists leaves entries and notes behind. `doctor`
 reports them; `prune-worktrees --apply` removes the unpinned, cold ones and

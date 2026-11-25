@@ -43,6 +43,9 @@ All notable changes to this project are documented here. The format follows
   optional fail-closed LLM merge/update pass. Pinned and hot entries are
   never modified; the API key is referenced by environment variable, never
   stored.
+- **Coverage gates.** `scripts/coverage.sh` enforces 90% statements, lines and
+  functions and 80% branch/decision across the module. CI runs the same gate
+  on every push and pull request.
 - **Sync capture.** `internal/sources` reads the artifacts the harnesses
   already write (Claude, Qwen, Cursor, Grok, Antigravity, Codex and OpenCode)
   and `sync` extracts only the new turns. The first run seeds the state;

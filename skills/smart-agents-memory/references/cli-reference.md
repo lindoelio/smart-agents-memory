@@ -104,29 +104,38 @@ and hot entries are never modified.
 
 ### `extract [--stdin] [--transcript <path>] [--session-id <id>] [--cwd <dir>] [--dry-run] [--auto-dream] [--quiet]`
 
-Extracts durable facts from new user turns. It accepts JSONL, a JSON
+Extracts durable facts from a manual transcript. It accepts JSONL, a JSON
 array/object or plain text and forces candidates to cold and unpinned. A
 stdin payload without `--session-id` is one complete turn: the cursor is
-neither read nor written, so a post-turn hook extracts every call. A file or
-an explicit `--session-id` keeps the per-session cursor. `--dry-run` prints
-`accepted=N` and writes neither the memory nor the cursor. `--auto-dream`
-consolidates when the dirty threshold is reached. A failed write aborts with
-a non-zero exit and leaves the cursor untouched.
+neither read nor written, so a one-shot payload is processed completely. A
+file or an explicit `--session-id` keeps the per-session cursor.
+`--dry-run` prints `accepted=N` and writes neither the memory nor the cursor.
+`--auto-dream` consolidates when the dirty threshold is reached. A failed
+write aborts with a non-zero exit and leaves the cursor untouched.
+`sync` is the normal capture path; `extract` is for a single transcript.
 
-### `watch [--once] [--interval 5m] [--auto-dream]`
+### `sync [--dry-run] [--backfill] [--since 7d] [--source <id>] [--max-bytes N] [--auto-dream] [--json] [--quiet]`
 
-Scans the default transcript directories and the `watch_dirs` configuration,
-running `extract` on new files. The scan is strict: JSON without a
-recognizable conversation is ignored, and plain text is accepted only for
-`.txt` and `.log`. Ignored files create no cursor. `--once` scans once and
-exits.
+Captures durable facts from the transcript artifacts the harnesses already
+write. It reads only files whose size or modification time changed, normalizes
+the native formats, and calls the same extraction gates as `extract`. The
+first run seeds the state and extracts nothing; `--backfill` is the explicit
+way to process history. `--since` limits backfill by file modification time,
+`--source` limits the run to one source, and `--dry-run` neither calls the
+model nor writes state. A failed write leaves the file cursor untouched.
 
-### `install [--hooks]`
+### `watch [--once] [--interval 5m]`
 
-Links the tools to the store. `--hooks` also materializes
-`<share>/hooks/post-turn.sh`, which invokes the absolute path of the binary,
-and `<share>/hooks/README.md` with the `{"command":...}` snippet for OpenCode,
-Qwen Code and Claude Code.
+Deprecated alias of `sync`. `watch --once` runs one `sync` and prints a
+deprecation warning; the loop form remains for one release.
+
+### `install [--scheduler] [--no-scheduler] [--interval 5m] [--hooks]`
+
+Links the tools to the store and optionally writes the periodic sync
+scheduler. `--scheduler` writes a launchd plist on macOS or a systemd user
+service and timer on Linux; `--no-scheduler` removes it; `--dry-run` prints
+the files without writing. `--hooks` is an experimental manual hook and is
+not required by `sync`.
 
 ### `mcp`
 

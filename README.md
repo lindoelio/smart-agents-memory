@@ -105,9 +105,9 @@ smart-agents-memory recall --tree           # the category router
 smart-agents-memory recall --query "flaky test"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory dream --deterministic-only
-smart-agents-memory extract --stdin --auto-dream --quiet
-smart-agents-memory watch --once
-smart-agents-memory install --hooks
+smart-agents-memory sync --dry-run           # see what would be captured
+smart-agents-memory sync                     # capture new turns from the harnesses
+smart-agents-memory install --scheduler      # run sync every five minutes
 smart-agents-memory mcp                     # JSON-RPC tools over stdio
 smart-agents-memory pin "Short title"       # protect a curated entry
 smart-agents-memory unpin "Short title"     # release it again
@@ -117,6 +117,11 @@ smart-agents-memory index                   # reconcile corpus <-> projections
 smart-agents-memory doctor                  # check the installation
 smart-agents-memory path                    # where the store is
 ```
+
+The first `sync` seeds the state at the end of the transcripts already on
+disk and extracts nothing; run `sync --backfill --since 7d` to process recent
+history explicitly. `install --scheduler` keeps the corpus current every five
+minutes without a daemon or a hook in any harness.
 
 The full surface is in
 [the CLI reference](skills/smart-agents-memory/references/cli-reference.md).
@@ -137,10 +142,12 @@ stores the **name** of the key variable, never the key:
 }
 ```
 
-`watch_dirs` is an optional list of extra transcript directories for `watch`.
-`install --hooks` writes `<share>/hooks/post-turn.sh` with the absolute path
-of the binary and a `command` snippet for OpenCode, Qwen Code and Claude
-Code.
+`watch_dirs` (or `sync_roots` for a specific source) is an optional list of
+extra transcript directories for `sync`. The first `sync` seeds the state and
+does not extract history; `sync --backfill` is the explicit opt-in for that.
+`install --scheduler` writes a launchd or systemd user timer that runs
+`sync --quiet` every five minutes. `install --hooks` remains as an
+experimental manual hook and is not required.
 
 ## Where the memory lives
 
@@ -206,12 +213,11 @@ minimum. See [the integrations reference](skills/smart-agents-memory/references/
 - **A tree, not a dump.** Entries carry a category and usage scenarios.
   `recall --tree` is the compact router; `--query`, `--category` and `--ref`
   fetch only what the task needs.
-- **Extraction is incremental.** `extract --transcript` and `watch` only
-  process new user turns and keep a durable cursor. A stdin payload without
-  `--session-id` is one complete turn, so a post-turn hook extracts every
-  call. Candidates are stored as cold, unpinned memories after the
-  SecretGuard and the why check; a failed write aborts the run and leaves
-  the cursor untouched.
+- **Capture is incremental.** `sync` reads only the transcript files that
+  changed, seeds the first run and extracts new user turns from the formats
+  the harnesses already write. `--backfill` is the explicit opt-in for old
+  history. Candidates are stored as cold, unpinned memories after the
+  SecretGuard and the why check; a failed write leaves the cursor untouched.
 
 ## Architecture
 

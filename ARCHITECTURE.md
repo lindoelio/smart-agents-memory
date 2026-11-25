@@ -220,32 +220,33 @@ non-English bodies, secrets and unknown refs. The lock is exclusive, with a
 15-minute stale-lock recovery. The state file records dirty mutations,
 last run and status.
 
-## Post-turn extraction
+## Capture
 
-`internal/extract` normalizes JSONL, JSON array/object and plain text into
-`Turn{Role, Text}`. A cursor in `.extract-cursor.json` is keyed by session;
-if the transcript shrank because the harness compacted it, the cursor is
-clamped to zero so post-compaction turns are not skipped. A stdin payload
-without `--session-id` is a one-shot: the cursor is neither read nor
-written, because a post-turn hook sends one finished turn per call.
+`internal/sources` is the capture registry. A source is a descriptor: a kind
+(files or sqlite), a format, roots, patterns and exclusions. The format is the
+only thing the code knows: `messages-jsonl`, `acp-jsonl`, `step-jsonl`,
+`response-item-jsonl` and `session-message-sqlite`. Adding a harness that
+already uses a known format is a registry entry, not a new integration.
 
-`Parse` stays permissive for a hook or a manual call, which may send a
-payload this package does not recognize. `ParseStrict` is what `watch` uses:
-a JSON document or JSONL stream without a recognizable turn yields zero
-turns, and plain text is accepted only for `.txt` and `.log`. A configuration
-file in a scanned directory never reaches the model, and a file with no
-conversation does not create a cursor.
+`sync` walks the enabled sources, reads only files whose size or modification
+time changed, and parses complete lines. A partial final line stays for the
+next run. The first run seeds the state at the end of every file and extracts
+nothing; `--backfill` is the explicit way to process old history. The state in
+`.sync-state.json` keeps a byte offset per file and a sequence per SQLite
+session, plus a short-lived hash of delivered turns to deduplicate overlapping
+sources.
 
-`App.Extract` calls the model only when the unprocessed slice has a non-empty
-user turn. Candidates must be durable, English and contain the why; they are
-forced to cold and unpinned, pass the SecretGuard, and cannot overwrite a
-pinned or hot title. A rejected candidate is a skip; a failed write is an
-operational error, so the run stops before the cursor moves and the next run
-retries it. `Add` recognizes a body it already holds, so the retry does not
-duplicate. The report separates `Accepted` from `Added`, and `--auto-dream`
-runs Dream when the dirty threshold is reached. `watch` scans the configured
-transcript directories; `install --hooks` writes a post-turn script with the
-absolute path of the binary, plus a `command` snippet for each harness.
+The format adapters drop system/developer/tool turns, synthetic tool results,
+the Codex `AGENTS.md` context block, and the harness wrappers (`<user_query>`,
+`<USER_REQUEST>`, `<system-reminder>`). A file without a recognizable turn is
+ignored; a parse error does not advance the cursor. Extraction candidates are
+still forced to cold and unpinned, pass the SecretGuard, and cannot overwrite
+a pinned or hot title.
+
+`install --scheduler` writes a launchd or systemd user timer that runs
+`sync --quiet`. There is no worker, spool or hook in the critical path; the
+experimental `install --hooks` command remains opt-in and is not required by
+any source.
 
 ## Reconciliation
 

@@ -4,7 +4,7 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.3.0] — 2026-11-25
 
 ### Added
 
@@ -43,11 +43,25 @@ All notable changes to this project are documented here. The format follows
   optional fail-closed LLM merge/update pass. Pinned and hot entries are
   never modified; the API key is referenced by environment variable, never
   stored.
+- **Sync capture.** `internal/sources` reads the artifacts the harnesses
+  already write (Claude, Qwen, Cursor, Grok, Antigravity, Codex and OpenCode)
+  and `sync` extracts only the new turns. The first run seeds the state;
+  `--backfill` is explicit. `install --scheduler` writes a launchd or systemd
+  user timer for `sync --quiet`. No hook, plugin or harness configuration is
+  required.
 - **Post-turn extraction.** `internal/extract` parses JSONL, JSON and plain
   text, keeps a per-session compression-safe cursor, and stores only cold,
-  unpinned candidates after the SecretGuard and the why check. `watch` scans
-  transcript directories with a strict parser, and `install --hooks` writes
-  the zero-exit post-turn script for OpenCode, Qwen Code and Claude Code.
+  unpinned candidates after the SecretGuard and the why check. `extract`
+  remains available for a manual transcript; `install --hooks` is an
+  experimental manual hook, not the capture path.
+
+### Changed
+
+- `watch` is a deprecated alias of `sync`; `watch --once` runs one sync.
+- The default capture no longer writes to harness settings, installs plugins,
+  or authenticates to a harness.
+- `sync_roots`, `sync_disabled`, `sync_max_bytes` and `sync_interval` are new
+  configuration keys; `watch_dirs` adds a custom `messages-jsonl` source.
 
 ### Fixed
 

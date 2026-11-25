@@ -103,9 +103,9 @@ smart-agents-memory recall --tree           # o router de categorias
 smart-agents-memory recall --query "teste flaky"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory dream --deterministic-only
-smart-agents-memory extract --stdin --auto-dream --quiet
-smart-agents-memory watch --once
-smart-agents-memory install --hooks
+smart-agents-memory sync --dry-run           # ver o que seria capturado
+smart-agents-memory sync                     # capturar turns novos dos harnesses
+smart-agents-memory install --scheduler      # rodar o sync a cada cinco minutos
 smart-agents-memory mcp                     # ferramentas JSON-RPC via stdio
 smart-agents-memory pin "Título curto"       # proteger uma entrada curada
 smart-agents-memory unpin "Título curto"     # liberar de novo
@@ -115,6 +115,11 @@ smart-agents-memory index                   # reconciliar corpus <-> projeções
 smart-agents-memory doctor                  # verificar a instalação
 smart-agents-memory path                    # onde está o store
 ```
+
+O primeiro `sync` semeia o estado no fim das transcrições já existentes e não
+extrai nada; rode `sync --backfill --since 7d` para processar o histórico
+recente explicitamente. `install --scheduler` mantém o corpus atualizado a
+cada cinco minutos, sem daemon e sem hook em nenhum harness.
 
 A superfície completa está na
 [referência da CLI](skills/smart-agents-memory/references/cli-reference.md).
@@ -135,9 +140,12 @@ OpenAI é usada quando a variável da chave existe. A configuração guarda o
 }
 ```
 
-`watch_dirs` é uma lista opcional de diretórios extras de transcrição para o `watch`.
-`install --hooks` gera `<share>/hooks/post-turn.sh` com o caminho absoluto do
-binário e um snippet `command` para OpenCode, Qwen Code e Claude Code.
+`watch_dirs` (ou `sync_roots` para uma fonte específica) é uma lista opcional
+de diretórios extras de transcrição para o `sync`. O primeiro `sync` semeia o
+estado e não extrai histórico; `sync --backfill` é o opt-in explícito.
+`install --scheduler` grava um timer launchd ou systemd que roda
+`sync --quiet` a cada cinco minutos. `install --hooks` continua experimental e
+não é necessário.
 
 ## Onde a memória mora
 
@@ -203,12 +211,12 @@ mínimo. Veja a
 - **Uma árvore, não um dump.** As entradas têm categoria e cenários de uso.
   `recall --tree` é o router compacto; `--query`, `--category` e `--ref`
   buscam só o que a tarefa precisa.
-- **Extração é incremental.** `extract --transcript` e `watch` só processam
-  turns novos de `user` e mantêm um cursor durável. Um payload de stdin sem
-  `--session-id` é um turno completo, então um hook pós-turno extrai em toda
-  chamada. Candidatos são salvos como memórias `cold` e não pinned, depois
-  do SecretGuard e da checagem do porquê; uma falha de escrita aborta a
-  execução e deixa o cursor intacto.
+- **Extração é incremental.** `sync` lê só os arquivos de transcrição que
+  mudaram, semeia a primeira execução e extrai turns novos de `user` dos
+  formatos que os harnesses já gravam. `--backfill` é o opt-in explícito para
+  o histórico antigo. Candidatos são salvos como memórias `cold` e não
+  pinned, depois do SecretGuard e da checagem do porquê; uma falha de escrita
+  deixa o cursor intacto.
 
 ## Arquitetura
 

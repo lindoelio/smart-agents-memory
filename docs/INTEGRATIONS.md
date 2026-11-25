@@ -22,29 +22,28 @@ environment variable is set. The configuration stores the variable name,
 never the key. Without one, `dream` runs deterministically; `recall --llm`
 reports that no client is configured.
 
-## The post-turn hook
+## Sync capture
 
-`install --hooks` writes `<share>/hooks/post-turn.sh`, which invokes the
-absolute path of the binary with `extract --stdin --auto-dream --quiet` and
-`|| true`. The absolute path matters because the hook runs with the PATH of
-the harness, not the PATH of the shell that installed the memory. The
-`|| true` is deliberate: a missing endpoint or a malformed transcript must
-never block the coding harness.
+`sync` reads what the harnesses already write; it does not install a hook or
+a plugin. The default sources are:
 
-The command also writes `<share>/hooks/README.md` with the reusable snippet:
+| Harness | Artifact | Format |
+|---|---|---|
+| Claude Code | `~/.claude/projects/**/*.jsonl` | `messages-jsonl` |
+| Qwen Code | `~/.qwen/projects/*/chats/*.jsonl` | `messages-jsonl` |
+| Cursor | `~/.cursor/projects/*/agent-transcripts/*/*.jsonl` | `messages-jsonl` |
+| Grok Build | `~/.grok/sessions/*/*/updates.jsonl` | `acp-jsonl` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/brain/*/.../transcript_full.jsonl` | `step-jsonl` |
+| Codex | `~/.codex/sessions/**/rollout-*.jsonl` | `response-item-jsonl` |
+| OpenCode | `~/.local/share/opencode/opencode.db` | `session-message-sqlite` (read-only) |
 
-```json
-{"command":"/absolute/path/to/post-turn.sh"}
-```
+The first run seeds the state and extracts nothing. `sync --backfill` is the
+explicit way to process history. `install --scheduler` writes a launchd or
+systemd user timer that runs `sync --quiet` every five minutes; no daemon or
+worker is started.
 
-The same snippet works for OpenCode, Qwen Code and Claude Code; each tool
-only needs to invoke it after a turn. The command does not edit the
-configuration of a harness it does not know.
-
-A stdin payload without `--session-id` is one complete turn, so two
-consecutive hook calls are both extracted. When the harness knows the
-session identifier, export `SMART_AGENTS_MEMORY_SESSION_ID`; the script
-then passes it as `--session-id` and extraction resumes from the cursor.
+`install --hooks` still exists for a manual hook experiment, but it is not
+part of the capture path and is not required for any harness.
 
 ## The links
 

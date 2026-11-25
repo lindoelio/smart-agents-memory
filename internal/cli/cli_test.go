@@ -848,11 +848,14 @@ func TestInstallSchedulerDryRunAndRemove(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the dry run exit code is %d: %s %s", code, out, errOut)
 	}
-	if !strings.Contains(out, "com.smart-agents-memory.sync") || !strings.Contains(out, "sync") {
+	want := "com.smart-agents-memory.sync"
+	if runtime.GOOS == "linux" {
+		want = "smart-agents-memory-sync.service"
+	}
+	if !strings.Contains(out, want) || !strings.Contains(out, "sync") {
 		t.Fatalf("the scheduler snippet is %q", out)
 	}
-	plist := filepath.Join(home, "Library", "LaunchAgents", "com.smart-agents-memory.sync.plist")
-	if _, err := os.Stat(plist); !os.IsNotExist(err) {
+	if _, err := os.Stat(schedulerPath(home)); !os.IsNotExist(err) {
 		t.Fatal("the dry run wrote the scheduler")
 	}
 }

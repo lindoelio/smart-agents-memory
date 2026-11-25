@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","parts":[{"text":"Remember the rule about flaky tests. Why: they block releases."}]}}
+{"type":"system","subtype":"system-reminder","content":"<system-reminder>transient harness context</system-reminder>"}
+{"type":"assistant","message":{"role":"model","parts":[{"text":"Noted."}]}}

@@ -1,0 +1,2 @@
+{"role":"user","message":{"content":[{"type":"text","text":"<timestamp>Monday, Nov 2, 2026 (UTC-3)</timestamp>\n<user_query>\nRemember the staging deploy rule. Why: staging must match production.\n</user_query>"}]}}
+{"role":"assistant","message":{"content":[{"type":"text","text":"Noted."}]}}

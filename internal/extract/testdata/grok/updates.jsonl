@@ -1,0 +1,4 @@
+{"timestamp":1795598684,"method":"_x.ai/session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"hook_execution","event_name":"user_prompt_submit"}}}
+{"timestamp":1795598685,"method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"user_message_chunk","content":{"type":"text","text":"Remember the ACP adapter rule. Why: updates.jsonl is the transcript."}}}}
+{"timestamp":1795598688,"method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"agent_message_chunk","content":{"type":"text","text":"Noted."}}}}
+{"timestamp":1795598689,"method":"session/update","params":{"sessionId":"session-1","update":{"sessionUpdate":"turn_completed"}}}

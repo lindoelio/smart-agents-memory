@@ -1,0 +1,12 @@
+{
+  "session_id": "66666666-6666-4666-8666-666666666666",
+  "transcript_path": "/Users/example/.claude/projects/-Users-example-project/66666666-6666-4666-8666-666666666666.jsonl",
+  "cwd": "/Users/example/project",
+  "prompt_id": "99999999-9999-4999-8999-999999999999",
+  "permission_mode": "default",
+  "hook_event_name": "Stop",
+  "stop_hook_active": false,
+  "last_assistant_message": "ok",
+  "background_tasks": [],
+  "session_crons": []
+}

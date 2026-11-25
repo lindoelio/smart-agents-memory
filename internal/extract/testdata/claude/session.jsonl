@@ -1,0 +1,3 @@
+{"type":"user","message":{"role":"user","content":[{"type":"text","text":"Remember that the release needs a green suite. Why: a red suite ships bugs."}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"Noted."}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"tool-1","content":"exit 0"}]}}

@@ -1,0 +1,15 @@
+{
+  "artifactDirectoryPath": "/Users/example/.gemini/antigravity-cli/brain/33333333-3333-4333-8333-333333333333",
+  "continuationActive": false,
+  "conversationId": "33333333-3333-4333-8333-333333333333",
+  "cwd": "/Users/example/project",
+  "error": "",
+  "executionNum": 0,
+  "fullyIdle": true,
+  "hookEventName": "Stop",
+  "lastUserInput": "Reply with the single word ok.",
+  "modelName": "gemini-3.8-flash-high",
+  "terminationReason": "NO_TOOL_CALL",
+  "transcriptPath": "/Users/example/.gemini/antigravity-cli/brain/33333333-3333-4333-8333-333333333333/.system_generated/logs/transcript_full.jsonl",
+  "workspacePaths": ["/Users/example/project"]
+}

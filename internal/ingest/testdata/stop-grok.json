@@ -1,0 +1,16 @@
+{
+  "hookEventName": "stop",
+  "sessionId": "22222222-2222-4222-8222-222222222222",
+  "cwd": "/Users/example/project",
+  "workspaceRoot": "/Users/example/project",
+  "timestamp": "2026-11-25T09:24:49.622588+00:00",
+  "transcriptPath": "/Users/example/.grok/sessions/%2FUsers%2Fexample%2Fproject/22222222-2222-4222-8222-222222222222/updates.jsonl",
+  "permissionMode": "bypassPermissions",
+  "reason": "shutdown",
+  "stopHookActive": false,
+  "hook_event_name": "Stop",
+  "session_id": "22222222-2222-4222-8222-222222222222",
+  "transcript_path": "/Users/example/.grok/sessions/%2FUsers%2Fexample%2Fproject/22222222-2222-4222-8222-222222222222/updates.jsonl",
+  "permission_mode": "bypassPermissions",
+  "stop_hook_active": false
+}

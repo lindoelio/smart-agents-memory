@@ -1,0 +1,4 @@
+{"type":"system","content":"You are Grok, an autonomous agent. This harness system prompt must not reach extraction."}
+{"type":"user","content":"Remember the session storage rule. Why: the session directory is authoritative."}
+{"type":"user","content":"tool output that must not become a user turn","synthetic_reason":"tool_result"}
+{"type":"assistant","content":"Noted."}

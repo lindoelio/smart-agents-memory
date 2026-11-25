@@ -16,6 +16,9 @@ import (
 
 func newApp(t *testing.T) *app.App {
 	t.Helper()
+	// Install writes the machine-wide links, so the test HOME must be
+	// temporary: a test never touches the real tool configuration.
+	t.Setenv("HOME", t.TempDir())
 	root := t.TempDir()
 	a, err := app.New(vault.Config{Backend: "obsidian", MemoryHome: root, ProjectionRoot: root}, root, io.Discard, io.Discard)
 	if err != nil {

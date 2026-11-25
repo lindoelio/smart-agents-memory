@@ -32,12 +32,12 @@ func Discover(reg Registry) []Candidate {
 	for _, source := range reg.Enabled() {
 		if source.Kind == KindSQLite {
 			for _, root := range source.Roots {
-				path := ExpandPath(root)
-				info, err := os.Stat(path)
+				candidate := ExpandPath(root)
+				info, err := os.Stat(candidate)
 				if err != nil || info.IsDir() {
 					continue
 				}
-				c := Candidate{Source: source, Path: path, Size: info.Size(), ModTime: info.ModTime()}
+				c := Candidate{Source: source, Path: candidate, Size: info.Size(), ModTime: info.ModTime()}
 				key := string(source.ID) + ":" + c.Path
 				if !seen[key] {
 					seen[key] = true
@@ -52,32 +52,63 @@ func Discover(reg Registry) []Candidate {
 			if err != nil || !info.IsDir() {
 				continue
 			}
+			var primaries, fallbacks []Candidate
+			primaryDirs := map[string]bool{}
 			_ = filepath.WalkDir(root, func(p string, entry os.DirEntry, err error) error {
 				if err != nil {
 					return nil
 				}
 				if entry.IsDir() {
 					name := entry.Name()
-					if p != root && (strings.HasPrefix(name, ".") || name == "node_modules" || name == ".git") {
+					if p != root && (name == "node_modules" || name == ".git") {
 						return filepath.SkipDir
 					}
 					return nil
 				}
-				if !sourceMatches(source, root, p) {
+				rel, err := filepath.Rel(root, p)
+				if err != nil {
+					return nil
+				}
+				rel = filepath.ToSlash(rel)
+				if sourceExcluded(source, rel) {
 					return nil
 				}
 				info, err := entry.Info()
 				if err != nil {
 					return nil
 				}
-				key := string(source.Format) + ":" + p
-				if seen[key] {
-					return nil
+				switch {
+				case matchesAny(source.Patterns, rel):
+					primaryDirs[filepath.Dir(p)] = true
+					primaries = append(primaries, Candidate{Source: source, Path: p, Size: info.Size(), ModTime: info.ModTime()})
+				case matchesAny(source.Fallback, rel):
+					fallbackSource := source
+					if source.FallbackFormat != "" {
+						fallbackSource.Format = source.FallbackFormat
+					}
+					fallbacks = append(fallbacks, Candidate{Source: fallbackSource, Path: p, Size: info.Size(), ModTime: info.ModTime()})
 				}
-				seen[key] = true
-				out = append(out, Candidate{Source: source, Path: p, Size: info.Size(), ModTime: info.ModTime()})
 				return nil
 			})
+			for _, c := range primaries {
+				key := string(c.Source.Format) + ":" + c.Path
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				out = append(out, c)
+			}
+			for _, c := range fallbacks {
+				if primaryDirs[filepath.Dir(c.Path)] {
+					continue
+				}
+				key := string(c.Source.Format) + ":" + c.Path
+				if seen[key] {
+					continue
+				}
+				seen[key] = true
+				out = append(out, c)
+			}
 		}
 	}
 	sort.Slice(out, func(i, j int) bool {
@@ -89,6 +120,23 @@ func Discover(reg Registry) []Candidate {
 	return out
 }
 
+func matchesAny(patterns []string, rel string) bool {
+	for _, pattern := range patterns {
+		if matchGlob(pattern, rel) {
+			return true
+		}
+	}
+	return false
+}
+
+func sourceExcluded(source Source, rel string) bool {
+	base := strings.ToLower(path.Base(rel))
+	if strings.HasSuffix(base, ".lock") || strings.HasSuffix(base, ".tmp") || strings.HasPrefix(base, ".") {
+		return true
+	}
+	return matchesAny(source.Exclude, rel)
+}
+
 // sourceMatches tests the relative path against the source patterns and
 // exclusions. The path is slash-normalized so the same globs work everywhere.
 func sourceMatches(source Source, root, p string) bool {
@@ -97,26 +145,10 @@ func sourceMatches(source Source, root, p string) bool {
 		return false
 	}
 	rel = filepath.ToSlash(rel)
-	base := strings.ToLower(path.Base(rel))
-	if strings.HasSuffix(base, ".lock") || strings.HasSuffix(base, ".tmp") || strings.HasPrefix(base, ".") {
+	if sourceExcluded(source, rel) {
 		return false
 	}
-	matched := false
-	for _, pattern := range source.Patterns {
-		if matchGlob(pattern, rel) {
-			matched = true
-			break
-		}
-	}
-	if !matched {
-		return false
-	}
-	for _, pattern := range source.Exclude {
-		if matchGlob(pattern, rel) {
-			return false
-		}
-	}
-	return true
+	return matchesAny(source.Patterns, rel)
 }
 
 // matchGlob matches a slash-separated glob with ** support.

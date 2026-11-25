@@ -638,9 +638,9 @@ func cmdSync(ctx context.Context, opts config.Options, args []string, out, errOu
 	} else if report.Seeded {
 		fmt.Fprintf(out, "sync: seeded=%d sources=%d\n", report.Files, report.Sources)
 	} else {
-		fmt.Fprintf(out, "sync: sources=%d files=%d changed=%d turns=%d candidates=%d added=%d skipped=%d errors=%d\n",
+		fmt.Fprintf(out, "sync: sources=%d files=%d changed=%d turns=%d candidates=%d added=%d skipped=%d migrated=%d errors=%d\n",
 			report.Sources, report.Files, report.Changed, report.Turns, report.Candidates,
-			report.Added, report.Skipped, len(report.Errors))
+			report.Added, report.Skipped, report.Migrated, len(report.Errors))
 	}
 	if len(report.Errors) > 0 {
 		return 1

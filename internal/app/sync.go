@@ -45,6 +45,7 @@ type SyncReport struct {
 	Added      int      `json:"added"`
 	Skipped    int      `json:"skipped"`
 	Ignored    int      `json:"ignored"`
+	Migrated   int      `json:"migrated,omitempty"`
 	Errors     []string `json:"errors,omitempty"`
 }
 
@@ -64,6 +65,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 	if err := a.Vault.Ready(ctx); err != nil {
 		return report, err
 	}
+	legacy := a.legacyCursors()
 	maxBytes := opts.MaxBytes
 	if maxBytes <= 0 {
 		maxBytes = a.Cfg.SyncMaxBytes
@@ -120,7 +122,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 		case sources.KindSQLite:
 			sourceErr = a.syncSQLite(ctx, source, state, opts, seeding, &report)
 		default:
-			sourceErr = a.syncFiles(ctx, source, state, opts, seeding, &report)
+			sourceErr = a.syncFiles(ctx, source, state, opts, seeding, legacy, &report)
 		}
 		if sourceErr != nil {
 			reportSource.Errors = append(reportSource.Errors, sourceErr.Error())
@@ -158,6 +160,31 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 	return report, nil
 }
 
+func (a *App) legacyCursors() map[string]extract.SessionCursor {
+	store, err := extract.Load(a.extractCursorPath())
+	if err != nil {
+		return nil
+	}
+	out := map[string]extract.SessionCursor{}
+	for id, cursor := range store.Sessions {
+		path := cursor.TranscriptPath
+		if path == "" {
+			path = id
+		}
+		if abs, err := filepath.Abs(path); err == nil {
+			out[abs] = cursor
+		}
+	}
+	return out
+}
+
+func absolutePath(path string) string {
+	if abs, err := filepath.Abs(path); err == nil {
+		return abs
+	}
+	return path
+}
+
 func resetForBackfill(state *sources.SyncState) {
 	for key, file := range state.Files {
 		file.Offset = 0
@@ -169,7 +196,7 @@ func resetForBackfill(state *sources.SyncState) {
 	}
 }
 
-func (a *App) syncFiles(ctx context.Context, source sources.Source, state *sources.SyncState, opts SyncOptions, seeding bool, report *SyncReport) error {
+func (a *App) syncFiles(ctx context.Context, source sources.Source, state *sources.SyncState, opts SyncOptions, seeding bool, legacy map[string]extract.SessionCursor, report *SyncReport) error {
 	for _, candidate := range sources.Discover(sources.Registry{Sources: []sources.Source{source}}) {
 		report.Files++
 		info, err := os.Stat(candidate.Path)
@@ -180,7 +207,14 @@ func (a *App) syncFiles(ctx context.Context, source sources.Source, state *sourc
 		key := source.ID + ":" + candidate.Path
 		previous := state.Files[key]
 		if seeding {
-			state.Files[key] = sources.FileState{Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), Offset: info.Size(), Last: time.Now()}
+			offset := info.Size()
+			if cursor, ok := legacy[absolutePath(candidate.Path)]; ok && cursor.ProcessedOffset > 0 {
+				// The old watch already extracted this file. Seed it at the
+				// end instead of sending its history again.
+				report.Migrated++
+				offset = info.Size()
+			}
+			state.Files[key] = sources.FileState{Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), Offset: offset, Last: time.Now()}
 			continue
 		}
 		if previous.Size == info.Size() && previous.MtimeNS == info.ModTime().UnixNano() && previous.Offset >= info.Size() {
@@ -205,7 +239,7 @@ func (a *App) syncFiles(ctx context.Context, source sources.Source, state *sourc
 			continue
 		}
 		report.Changed++
-		turns, err := sources.Parse(source.Format, data)
+		turns, err := sources.Parse(candidate.Source.Format, data)
 		if err != nil {
 			report.Errors = append(report.Errors, candidate.Path+": "+err.Error())
 			continue

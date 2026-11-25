@@ -46,6 +46,13 @@ type Source struct {
 	// Patterns are slash-separated globs relative to a root. They support
 	// "**" for any number of directories.
 	Patterns []string
+	// Fallback patterns are used only when no primary pattern matched in
+	// the same session directory. This is what makes an old Grok session
+	// readable without processing updates.jsonl and chat_history.jsonl twice.
+	Fallback []string
+	// FallbackFormat is the format of a fallback file when it differs from
+	// the primary format (Grok chat_history is messages, updates is ACP).
+	FallbackFormat Format
 	// Exclude are slash-separated globs that remove a match.
 	Exclude []string
 	// MaxBytes caps one read from one file. Zero means the default.
@@ -87,14 +94,17 @@ func Defaults() Registry {
 		},
 		{
 			ID: "grok", Kind: KindFiles, Format: FormatACPJSONL,
-			Roots:    []string{"~/.grok/sessions"},
-			Patterns: []string{"*/*/updates.jsonl"},
-			Enabled:  true,
+			Roots:          []string{"~/.grok/sessions"},
+			Patterns:       []string{"*/*/updates.jsonl"},
+			Fallback:       []string{"*/*/chat_history.jsonl"},
+			FallbackFormat: FormatMessagesJSONL,
+			Enabled:        true,
 		},
 		{
 			ID: "antigravity", Kind: KindFiles, Format: FormatStepJSONL,
 			Roots:    []string{"~/.gemini/antigravity-cli/brain"},
 			Patterns: []string{"*/.system_generated/logs/transcript_full.jsonl"},
+			Fallback: []string{"*/.system_generated/logs/transcript.jsonl"},
 			Enabled:  true,
 		},
 		{

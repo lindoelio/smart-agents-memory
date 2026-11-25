@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
+	"github.com/lindoelio/smart-agents-memory/internal/extract"
 	"github.com/lindoelio/smart-agents-memory/internal/sources"
 	_ "modernc.org/sqlite"
 )
@@ -351,5 +352,86 @@ func TestSyncSeedsPerSource(t *testing.T) {
 	}
 	if fake.calls != 1 {
 		t.Fatalf("the new qwen turn called the model %d times", fake.calls)
+	}
+}
+
+func TestSyncMigratesTheLegacyCursor(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	path := writeCursorSession(t, h.home, `{"role":"user","content":"already extracted"}`, `{"role":"assistant","content":"noted"}`)
+	legacy := extract.CursorStore{Sessions: map[string]extract.SessionCursor{
+		path: {SessionID: path, TranscriptPath: path, ProcessedOffset: 2},
+	}}
+	if err := extract.Save(filepath.Join(h.root, ".extract-cursor.json"), legacy); err != nil {
+		t.Fatal(err)
+	}
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	report, err := h.app.Sync(ctx, app.SyncOptions{SourceID: "cursor"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Migrated != 1 || fake.calls != 0 {
+		t.Fatalf("the legacy cursor was not migrated: %+v calls=%d", report, fake.calls)
+	}
+	state, err := sources.LoadState(filepath.Join(h.root, ".sync-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, file := range state.Files {
+		if strings.Contains(key, "cursor") && file.Offset != file.Size {
+			t.Fatalf("the migrated cursor is %+v", file)
+		}
+	}
+	if _, err := h.app.Sync(ctx, app.SyncOptions{SourceID: "cursor"}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 0 {
+		t.Fatalf("the migrated history was extracted: %d", fake.calls)
+	}
+}
+
+func TestSyncReadsTheGrokHistoryFallback(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	path := filepath.Join(h.home, ".grok", "sessions", "cwd", "session", "chat_history.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(
+		`{"type":"system","content":"system prompt"}`+"\n"+
+			`{"type":"user","content":"remember the grok fallback"}`+"\n"+
+			`{"type":"assistant","content":"noted"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := &extractLLM{payload: `{"candidates":[{"scope":"lesson","title":"Grok fallback","body":"The rule. Why it matters."}]}`}
+	h.app.LLM = fake
+	report, err := h.app.Sync(context.Background(), app.SyncOptions{Backfill: true, SourceID: "grok"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || report.Added != 1 {
+		t.Fatalf("the grok fallback is %+v calls=%d", report, fake.calls)
+	}
+}
+
+func TestSyncReadsTheAntigravityTranscriptFallback(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	path := filepath.Join(h.home, ".gemini", "antigravity-cli", "brain", "id", ".system_generated", "logs", "transcript.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(
+		`{"type":"USER_INPUT","content":"<USER_REQUEST>remember the agy fallback</USER_REQUEST>"}`+"\n"+
+			`{"type":"PLANNER_RESPONSE","content":"noted"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := &extractLLM{payload: `{"candidates":[{"scope":"lesson","title":"Agy fallback","body":"The rule. Why it matters."}]}`}
+	h.app.LLM = fake
+	report, err := h.app.Sync(context.Background(), app.SyncOptions{Backfill: true, SourceID: "antigravity"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 || report.Added != 1 {
+		t.Fatalf("the antigravity fallback is %+v calls=%d", report, fake.calls)
 	}
 }

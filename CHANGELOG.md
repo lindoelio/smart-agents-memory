@@ -61,6 +61,9 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - `watch` is a deprecated alias of `sync`; `watch --once` runs one sync.
+- Grok and Antigravity have per-session fallback transcripts
+  (`chat_history.jsonl` and `transcript.jsonl`) when the primary file is
+  absent. A legacy `.extract-cursor.json` is migrated on the first sync.
 - The default capture no longer writes to harness settings, installs plugins,
   or authenticates to a harness.
 - `sync_roots`, `sync_disabled`, `sync_max_bytes` and `sync_interval` are new

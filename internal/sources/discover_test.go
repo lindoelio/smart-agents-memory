@@ -89,3 +89,59 @@ func TestDiscoverSkipsAFileRoot(t *testing.T) {
 		t.Fatalf("a file root produced %+v", got)
 	}
 }
+
+func TestDiscoverGrokPrefersUpdatesAndFallsBackPerSession(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("cwd/one/updates.jsonl")
+	write("cwd/one/chat_history.jsonl")
+	write("cwd/two/chat_history.jsonl")
+	reg := Build(map[string][]string{"grok": {root}}, nil, 0, nil)
+	source, _ := reg.ByID("grok")
+	got := Discover(Registry{Sources: []Source{source}})
+	if len(got) != 2 {
+		t.Fatalf("the fallback discovery is %+v", got)
+	}
+	formats := map[string]Format{}
+	for _, c := range got {
+		formats[filepath.Base(c.Path)] = c.Source.Format
+	}
+	if formats["updates.jsonl"] != FormatACPJSONL || formats["chat_history.jsonl"] != FormatMessagesJSONL {
+		t.Fatalf("the formats are %+v", formats)
+	}
+}
+
+func TestDiscoverAntigravityFallsBackToTranscript(t *testing.T) {
+	root := t.TempDir()
+	write := func(rel string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte("{}"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("one/.system_generated/logs/transcript_full.jsonl")
+	write("one/.system_generated/logs/transcript.jsonl")
+	write("two/.system_generated/logs/transcript.jsonl")
+	reg := Build(map[string][]string{"antigravity": {root}}, nil, 0, nil)
+	source, _ := reg.ByID("antigravity")
+	got := Discover(Registry{Sources: []Source{source}})
+	if len(got) != 2 {
+		t.Fatalf("the fallback discovery is %+v", got)
+	}
+	for _, c := range got {
+		if c.Source.Format != FormatStepJSONL {
+			t.Fatalf("the format is %q", c.Source.Format)
+		}
+	}
+}

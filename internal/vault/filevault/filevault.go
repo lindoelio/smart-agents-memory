@@ -106,9 +106,13 @@ func (s *Store) Problems(_ context.Context) ([]string, error) {
 		}
 		// A note that declares a type was meant to be an entry. Without a
 		// title it is invisible to Entries, so it is a problem to report,
-		// not a note to ignore.
-		if _, ok := memory.Parse(string(data)); !ok && noteHasEntryType(string(data)) {
-			problems = append(problems, s.rel(path)+": note without a title")
+		// not a note to ignore. A project note is addressed by its name
+		// (projects/<name>.md) and deliberately carries no title.
+		rel := s.rel(path)
+		if !strings.HasPrefix(rel, "projects/") {
+			if _, ok := memory.Parse(string(data)); !ok && noteHasEntryType(string(data)) {
+				problems = append(problems, rel+": note without a title")
+			}
 		}
 		return nil
 	})

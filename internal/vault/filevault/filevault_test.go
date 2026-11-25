@@ -1026,8 +1026,9 @@ func TestProblemsReportsATitlelessNote(t *testing.T) {
 	if err := os.WriteFile(note, []byte("---\ntype: lesson\ndate: 2026-11-07\n---\n\n## \n\nThe body.\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	// A project note has no type: it is not a broken entry.
-	if err := os.WriteFile(filepath.Join(store.root, "projects", "demo.md"), []byte("# Context\n"), 0o644); err != nil {
+	// A project note has no title: it is addressed by its file name.
+	if err := os.WriteFile(filepath.Join(store.root, "projects", "demo.md"),
+		[]byte("---\ndescription: Demo\ntype: project\ndate: 2026-11-07\nalwaysApply: true\n---\n\n# Demo\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	problems, err := store.Problems(context.Background())

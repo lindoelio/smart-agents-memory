@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] — 2026-11-25
+
+### Fixed
+
+- The doctor no longer reports a project note (`projects/<name>.md`) as a
+  titleless entry. A project note is addressed by its file name and
+  deliberately carries no title; only a real corpus entry without a title is
+  a problem.
+
 ## [0.4.0] — 2026-11-25
 
 ### Added

@@ -642,6 +642,12 @@ purpose. The decisions and the implementation plan live in
 | F21 | `--worktree auto` works with any scope; the main checkout stays repository-wide. | `internal/app/worktree.go`; `TestAddWorktreeAutoScopesALessonToTheLinkedWorktree`, `TestBriefAutoDetectsTheLinkedWorktree` |
 | F22 | A dry run reports the same counts as a real run (survivor set). | `internal/app/dream.go`; `TestDreamDryRunReportsTheSameCounts` |
 
+Follow-up in 0.4.1: the F2 check originally reported a project note
+(`projects/<name>.md`, which has `type: project` and no title by convention)
+as a titleless entry. The check now skips the `projects/` folder, and the
+MCP test that installs the links sets a temporary `HOME` so a test never
+touches the real tool configuration.
+
 One extra bug was found by the end-to-end pass while fixing F4: `memory.Format`
 wrote keywords unquoted, so a keyword such as `a: b` came back as `map[a:b]`
 from the corpus. It is fixed and covered by

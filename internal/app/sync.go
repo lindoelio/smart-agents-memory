@@ -45,6 +45,7 @@ type SyncReport struct {
 	Added      int      `json:"added"`
 	Skipped    int      `json:"skipped"`
 	Ignored    int      `json:"ignored"`
+	Redacted   int      `json:"redacted,omitempty"`
 	Migrated   int      `json:"migrated,omitempty"`
 	Errors     []string `json:"errors,omitempty"`
 }
@@ -141,6 +142,9 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 			allSeeded = false
 			break
 		}
+	}
+	if opts.Backfill && !opts.DryRun && len(report.Errors) == 0 {
+		state.Backfilled = true
 	}
 	if !opts.DryRun {
 		state.Seeded = allSeeded
@@ -264,6 +268,7 @@ func (a *App) syncFiles(ctx context.Context, source sources.Source, state *sourc
 		report.Accepted += result.Accepted
 		report.Added += result.Added
 		report.Skipped += len(result.Skipped)
+		report.Redacted += result.Redacted
 		state.Files[key] = sources.FileState{Size: info.Size(), MtimeNS: info.ModTime().UnixNano(), Offset: end, Last: time.Now()}
 		markSeen(state, source.ID, key, newTurns)
 		if !opts.DryRun {
@@ -323,6 +328,7 @@ func (a *App) syncSQLite(ctx context.Context, source sources.Source, state *sour
 			report.Accepted += result.Accepted
 			report.Added += result.Added
 			report.Skipped += len(result.Skipped)
+			report.Redacted += result.Redacted
 			state.Session[source.ID+":"+session] = sources.SessionState{LastSeq: next[session], Last: time.Now()}
 			markSeen(state, source.ID, source.ID+":"+session, turns)
 			if err := sources.SaveState(a.syncStatePath(), state); err != nil {
@@ -402,12 +408,14 @@ func readFrom(path string, offset, maxBytes int64) ([]byte, int64, error) {
 
 // SourceStatus is one line of the doctor matrix.
 type SourceStatus struct {
-	ID       string
-	Kind     sources.Kind
-	Enabled  bool
-	Exists   bool
-	LastSync time.Time
-	Errors   []string
+	ID         string
+	Kind       sources.Kind
+	Enabled    bool
+	Exists     bool
+	Seeded     bool
+	Backfilled bool
+	LastSync   time.Time
+	Errors     []string
 }
 
 // SourceStatuses reports the configured sources without reading transcripts.
@@ -424,9 +432,14 @@ func (a *App) SourceStatuses() []SourceStatus {
 			}
 		}
 		if state != nil {
+			status.Backfilled = state.Backfilled
+			if state.Seeded {
+				status.Seeded = true
+			}
 			if saved, ok := state.Sources[source.ID]; ok {
 				status.LastSync = saved.LastSync
 				status.Errors = saved.Errors
+				status.Seeded = status.Seeded || saved.Seeded
 			}
 		}
 		statuses = append(statuses, status)

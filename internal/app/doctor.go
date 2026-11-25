@@ -164,6 +164,16 @@ func (a *App) Doctor(ctx context.Context) (DoctorReport, error) {
 		default:
 			line += "missing"
 		}
+		if status.Seeded {
+			line += ", seed: done"
+		} else {
+			line += ", seed: pending"
+		}
+		if status.Backfilled {
+			line += ", backfill: done"
+		} else {
+			line += ", backfill: not run"
+		}
 		if !status.LastSync.IsZero() {
 			line += fmt.Sprintf(", last sync %s ago", time.Since(status.LastSync).Round(time.Second))
 		}

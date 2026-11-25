@@ -109,3 +109,24 @@ func TestScanReturnsOneMatchPerRule(t *testing.T) {
 		t.Fatalf("github-pat fired %d times", count)
 	}
 }
+
+func TestRedactReplacesHighConfidenceSecrets(t *testing.T) {
+	token := "ghp_" + strings.Repeat("a", 36)
+	input := "the token is " + token + " and the other is " + token
+	got, count := Redact(input)
+	if count != 2 {
+		t.Fatalf("the count is %d", count)
+	}
+	if strings.Contains(got, token) || !strings.Contains(got, "[redacted]") {
+		t.Fatalf("the redacted text is %q", got)
+	}
+}
+
+func TestRedactLeavesOrdinaryTextAndEmptyInput(t *testing.T) {
+	for _, input := range []string{"", "no credentials here", "sk-short"} {
+		got, count := Redact(input)
+		if got != input || count != 0 {
+			t.Fatalf("Redact(%q) = %q %d", input, got, count)
+		}
+	}
+}

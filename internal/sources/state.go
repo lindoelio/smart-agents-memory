@@ -34,12 +34,13 @@ type SourceState struct {
 
 // SyncState is the content of .sync-state.json.
 type SyncState struct {
-	Version int                     `json:"version"`
-	Seeded  bool                    `json:"seeded"`
-	Files   map[string]FileState    `json:"files"`
-	Session map[string]SessionState `json:"sessions"`
-	Seen    map[string]time.Time    `json:"seen,omitempty"`
-	Sources map[string]SourceState  `json:"sources,omitempty"`
+	Version    int                     `json:"version"`
+	Seeded     bool                    `json:"seeded"`
+	Backfilled bool                    `json:"backfilled,omitempty"`
+	Files      map[string]FileState    `json:"files"`
+	Session    map[string]SessionState `json:"sessions"`
+	Seen       map[string]time.Time    `json:"seen,omitempty"`
+	Sources    map[string]SourceState  `json:"sources,omitempty"`
 }
 
 // NewState returns an empty state.

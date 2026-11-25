@@ -2,7 +2,9 @@ package app_test
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"strings"
 	"testing"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
@@ -64,4 +66,38 @@ func (f *failingExtractLLM) Kind() string { return "failing" }
 
 func (f *failingExtractLLM) CompleteJSON(context.Context, llm.Request, any) error {
 	return f.err
+}
+
+type captureLLM struct {
+	request llm.Request
+	payload string
+}
+
+func (c *captureLLM) Kind() string { return "capture" }
+
+func (c *captureLLM) CompleteJSON(_ context.Context, request llm.Request, out any) error {
+	c.request = request
+	return json.Unmarshal([]byte(c.payload), out)
+}
+
+func TestExtractTurnsRedactsHighConfidenceSecretsBeforeThePrompt(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	token := "ghp_" + strings.Repeat("a", 36)
+	capture := &captureLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = capture
+	report, err := h.app.ExtractTurns(context.Background(), []extract.Turn{
+		{Role: "user", Text: "the token is " + token},
+	}, app.ExtractOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Redacted != 1 {
+		t.Fatalf("the report is %+v", report)
+	}
+	if strings.Contains(capture.request.UserPrompt, token) {
+		t.Fatal("the prompt carried the secret")
+	}
+	if !strings.Contains(capture.request.UserPrompt, "[redacted]") {
+		t.Fatalf("the prompt is %q", capture.request.UserPrompt)
+	}
 }

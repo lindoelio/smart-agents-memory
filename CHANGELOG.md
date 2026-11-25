@@ -61,6 +61,8 @@ All notable changes to this project are documented here. The format follows
 ### Changed
 
 - `watch` is a deprecated alias of `sync`; `watch --once` runs one sync.
+- High-confidence credentials in a transcript or manifest are redacted
+  before the extraction prompt; only the replacement count is reported.
 - Grok and Antigravity have per-session fallback transcripts
   (`chat_history.jsonl` and `transcript.jsonl`) when the primary file is
   absent. A legacy `.extract-cursor.json` is migrated on the first sync.

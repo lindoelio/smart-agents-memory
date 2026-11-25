@@ -142,6 +142,16 @@ STATEMENT_MIN=90 FUNCTION_MIN=90 DECISION_MIN=80 LINES_MIN=90 \
   ./scripts/coverage.sh
 ```
 
+## Fuzz seeds
+
+`internal/extract`, `internal/memory`, `internal/native` and `internal/config`
+have fuzz targets with seed corpora. The seeds run in the normal suite; a
+longer campaign is optional:
+
+```bash
+go test ./internal/extract -fuzz FuzzParse -fuzztime 30s
+```
+
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs `gofmt -l .`, `go vet ./...`,

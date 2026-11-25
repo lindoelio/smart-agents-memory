@@ -57,6 +57,7 @@ type ExtractReport struct {
 	Added         int
 	Skipped       []string
 	SkippedReason string
+	Redacted      int
 	Cursor        extract.SessionCursor
 	Dream         *DreamReport
 }
@@ -196,7 +197,9 @@ func (a *App) ExtractTurns(ctx context.Context, turns []extract.Turn, opts Extra
 		return report, fmt.Errorf("extraction needs an LLM client")
 	}
 
+	turns, report.Redacted = redactTurns(turns)
 	manifest := a.extractManifest(ctx)
+	manifest, _ = secretguard.Redact(manifest)
 	request := a.extractPrompt(turns, manifest)
 	var response struct {
 		Candidates []ExtractCandidate `json:"candidates"`
@@ -226,6 +229,18 @@ func (a *App) ExtractTurns(ctx context.Context, turns []extract.Turn, opts Extra
 		}
 	}
 	return report, nil
+}
+
+func redactTurns(turns []extract.Turn) ([]extract.Turn, int) {
+	out := make([]extract.Turn, 0, len(turns))
+	total := 0
+	for _, turn := range turns {
+		text, count := secretguard.Redact(turn.Text)
+		total += count
+		turn.Text = text
+		out = append(out, turn)
+	}
+	return out, total
 }
 
 func (a *App) extractManifest(ctx context.Context) string {

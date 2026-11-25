@@ -52,8 +52,10 @@ here, and it is synthetic.
 - **Team memory is committed to the repository.** Treat a team note like
   any other file you commit. `.agents/memory/` and `.qwen/team-memory/`
   reject a symlink that could redirect a write outside the worktree.
-- **Extraction cannot escalate a memory.** `extract` and `watch` force cold,
+- **Extraction cannot escalate a memory.** `extract` and `sync` force cold,
   unpinned candidates, run the SecretGuard, and refuse a pinned or hot title.
+  High-confidence credentials from the transcript and manifest are replaced
+  with `[redacted]` before the model prompt; only the count is reported.
   `watch` parses strictly, so a configuration file is never sent to the
   model as a user turn. A failed write aborts the run before the cursor
   moves, so the candidate is retried instead of lost. The post-turn hook

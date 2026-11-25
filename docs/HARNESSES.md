@@ -101,6 +101,11 @@ other sources backfill accidentally.
 
 The state also stores a short-lived hash of delivered turns. This keeps two
 sources that point at the same session from producing duplicate memories.
+`doctor` shows `seed: done|pending` and `backfill: done|not run` per source.
+
+Before the extraction prompt, high-confidence credentials from the turns and
+the manifest are replaced with `[redacted]`; the report counts the
+replacements but never logs the value.
 
 ## Artifacts verified in the probe
 

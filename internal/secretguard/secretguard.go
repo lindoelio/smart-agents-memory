@@ -132,3 +132,24 @@ func labelOf(id string) string {
 	}
 	return strings.Join(parts, " ")
 }
+
+// Redact replaces every high-confidence credential in text with the literal
+// "[redacted]" and returns the number of replacements. The matched value is
+// never returned or logged.
+func Redact(text string) (string, int) {
+	if text == "" {
+		return text, 0
+	}
+	compile()
+	out := text
+	total := 0
+	for _, rule := range compiled {
+		matches := rule.pattern.FindAllStringIndex(out, -1)
+		if len(matches) == 0 {
+			continue
+		}
+		total += len(matches)
+		out = rule.pattern.ReplaceAllString(out, "[redacted]")
+	}
+	return out, total
+}

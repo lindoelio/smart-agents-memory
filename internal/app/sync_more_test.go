@@ -435,3 +435,33 @@ func TestSyncReadsTheAntigravityTranscriptFallback(t *testing.T) {
 		t.Fatalf("the antigravity fallback is %+v calls=%d", report, fake.calls)
 	}
 }
+
+func TestDoctorShowsSeedAndBackfillState(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	writeCursorSession(t, h.home, `{"role":"user","content":"a backfilled rule"}`)
+	h.app.LLM = &extractLLM{payload: `{"candidates":[]}`}
+	if _, err := h.app.Sync(ctx, app.SyncOptions{Backfill: true, SourceID: "cursor"}); err != nil {
+		t.Fatal(err)
+	}
+	report, err := h.app.Doctor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(report.Notes, "\n")
+	if !strings.Contains(joined, "seed: done") || !strings.Contains(joined, "backfill: done") {
+		t.Fatalf("the doctor notes are %q", joined)
+	}
+}
+
+func TestDoctorShowsPendingSeed(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	report, err := h.app.Doctor(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	joined := strings.Join(report.Notes, "\n")
+	if !strings.Contains(joined, "seed: pending") || !strings.Contains(joined, "backfill: not run") {
+		t.Fatalf("the doctor notes are %q", joined)
+	}
+}

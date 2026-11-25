@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -434,5 +435,55 @@ func TestTheModificationTimeIsKept(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestTheRegistryListsTheGateways checks the registry the configuration
+// validates against.
+func TestTheRegistryListsTheGateways(t *testing.T) {
+	names := vault.Names()
+	want := map[string]bool{"obsidian": true, "disk": true, "sqlite": true}
+	for _, name := range names {
+		delete(want, name)
+	}
+	if len(want) != 0 {
+		t.Fatalf("the registry is missing %v (it has %v)", want, names)
+	}
+	for i := 1; i < len(names); i++ {
+		if names[i-1] > names[i] {
+			t.Fatalf("the registry is not sorted: %v", names)
+		}
+	}
+}
+
+// TestOpenRejectsAnUnknownGateway keeps a typo in the configuration from
+// silently selecting a default.
+func TestOpenRejectsAnUnknownGateway(t *testing.T) {
+	if _, err := vault.Open(vault.Config{Backend: "nonsense"}); err == nil {
+		t.Fatal("an unknown gateway was opened")
+	} else if !strings.Contains(err.Error(), "unknown vault backend") ||
+		!strings.Contains(err.Error(), "obsidian") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+// TestOpenExplainsTheRemovedNotionGateway keeps the old configuration
+// readable: it must say the gateway left, not that the name is unknown.
+func TestOpenExplainsTheRemovedNotionGateway(t *testing.T) {
+	if _, err := vault.Open(vault.Config{Backend: "notion"}); err == nil {
+		t.Fatal("the removed gateway was opened")
+	} else if !strings.Contains(err.Error(), "removed in 0.2.0") {
+		t.Fatalf("the error is %v", err)
+	}
+}
+
+// TestOpenDefaultsToObsidian checks the empty backend of the configuration.
+func TestOpenDefaultsToObsidian(t *testing.T) {
+	store, err := vault.Open(vault.Config{MemoryHome: t.TempDir()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if store.Kind() != vault.DefaultBackend {
+		t.Fatalf("the default gateway is %q", store.Kind())
 	}
 }

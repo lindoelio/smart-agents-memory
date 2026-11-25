@@ -66,9 +66,12 @@ These hold in the code and in the content of the store:
 gofmt -l .
 go vet ./...
 go test ./...
+./scripts/coverage.sh
 ```
 
-The suite needs no token and no network.
+The test suite needs no token and no network. The coverage script installs
+pinned tools through `go run`; the gates are 90% statements, lines and
+functions and 80% branch/decision.
 
 ## The contracts that must not break
 
@@ -80,6 +83,9 @@ The suite needs no token and no network.
   `^[a-z0-9][a-z0-9-]{0,63}$`.
 - The round trip between the gateways: the same corpus must come back
   unchanged from every backend.
+- The capture contract: a harness is a source descriptor plus a format
+  adapter and a fixture. `internal/app` and `internal/cli` do not branch on a
+  harness name, and `sync` does not write to harness configuration.
 
 ## Before a release
 

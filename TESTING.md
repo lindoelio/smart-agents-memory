@@ -116,18 +116,40 @@ test at the level that proves the behavior.
 | A team write or a secret scan | The team store round trip, the Qwen projection, the symlink boundary and every SecretGuard rule |
 | A taxonomy or recall mode | The category round trip, tree grouping and budget, refs, ranking and MCP tools |
 | Dream consolidation | Deterministic dedupe/backfill, lock recovery and the fail-closed LLM operation gate |
-| Post-turn extraction | Transcript formats, the strict parser, one-shot stdin versus a session cursor, cursor clamp, safety gates, write-failure retry, watch and the hook script |
+| Sync capture | Source discovery, each transcript format, seed/backfill, state, dedupe, read-only OpenCode, error isolation and doctor source status |
 | A command or a flag | `cli_test.go`: the exit code and the output |
-| The installation | The links, the backup of an overwritten file, and `doctor` |
+| The installation | The links, the backup of an overwritten file, the scheduler and `doctor` |
 | The migration | The dry run, the apply, and the idempotency |
+
+## Coverage gates
+
+The module gate is 90% statements, lines and functions, and 80%
+branch/decision. Go has no native branch coverage; the decision metric comes
+from `gomcdc`. Lines come from `limgo` over a merged coverage profile. The
+branch estimate that `limgo` computes is not the gate.
+
+```bash
+./scripts/coverage.sh
+```
+
+The script runs the tests with `-coverpkg=./...`, merges the profiles with
+`gocovmerge`, enforces lines with `limgo`, and enforces statement, function
+and decision with `gomcdc`. The thresholds are env-overridable during a
+ratchet:
+
+```bash
+STATEMENT_MIN=90 FUNCTION_MIN=90 DECISION_MIN=80 LINES_MIN=90 \
+  ./scripts/coverage.sh
+```
 
 ## Continuous integration
 
 `.github/workflows/ci.yml` runs `gofmt -l .`, `go vet ./...`,
 `go test ./...`, `go build ./...`, the release build with the version
 check, the skill manifest check, and `shellcheck` on `scripts/*.sh`, on
-Ubuntu and macOS. The `smoke` job builds the release binary on Ubuntu and
-runs the commands above against a temporary store.
+Ubuntu and macOS. A separate `coverage` job runs the coverage gates. The
+`smoke` job builds the release binary on Ubuntu and runs the commands above
+against a temporary store.
 
 `.github/workflows/publish.yml` repeats the formatting, vet and test checks
 before a release: a red suite stops the publication.

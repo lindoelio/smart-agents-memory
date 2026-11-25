@@ -139,3 +139,84 @@ func TestActiveWorktreesWithoutRegistrationsIsEmpty(t *testing.T) {
 		t.Fatalf("the active worktrees are %+v", active)
 	}
 }
+
+func TestResolveStartsFromAFile(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	file := filepath.Join(repo, "main.go")
+	writeFile(t, file, "package main\n")
+	info, ok := Resolve(file)
+	if !ok || info.RepoRoot != repo {
+		t.Fatalf("a file start resolved %+v", info)
+	}
+}
+
+func TestResolveRejectsAnUnreadableGitMarker(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// A symlink is neither a directory nor a regular gitdir pointer.
+	if err := os.Symlink(filepath.Join(t.TempDir(), "elsewhere"), filepath.Join(dir, ".git")); err != nil {
+		t.Fatal(err)
+	}
+	if info, ok := Resolve(dir); ok {
+		t.Fatalf("a symlinked .git resolved as %+v", info)
+	}
+}
+
+func TestResolveRejectsABrokenGitdirPointer(t *testing.T) {
+	cases := map[string]string{
+		"not a pointer": "this is not a gitdir\n",
+		"empty pointer": "gitdir:\n",
+	}
+	for name, content := range cases {
+		t.Run(name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "repo")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(dir, ".git"), content)
+			if info, ok := Resolve(dir); ok {
+				t.Fatalf("the pointer resolved as %+v", info)
+			}
+		})
+	}
+}
+
+func TestResolveReadsARelativeGitdirPointer(t *testing.T) {
+	root := t.TempDir()
+	repo := filepath.Join(root, "repo")
+	worktree := filepath.Join(root, "wt")
+	gitDir := filepath.Join(repo, ".git", "worktrees", "wt")
+	for _, dir := range []string{gitDir, worktree} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeFile(t, filepath.Join(gitDir, "commondir"), "../..\n")
+	// The pointer is relative to the worktree root.
+	writeFile(t, filepath.Join(worktree, ".git"), "gitdir: .git/worktrees/wt\n")
+	// A stale ./git/worktrees path does not exist below a linked worktree;
+	// the pointer still resolves against the worktree root.
+	info, ok := Resolve(worktree)
+	if !ok {
+		t.Fatal("the relative pointer did not resolve")
+	}
+	if info.WorktreeRoot != worktree {
+		t.Fatalf("the worktree root is %q", info.WorktreeRoot)
+	}
+}
+
+func TestActiveWorktreesReportsAGitFile(t *testing.T) {
+	repo := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(repo, ".git"), "gitdir: elsewhere\n")
+	if _, err := ActiveWorktrees(repo); err == nil {
+		t.Fatal("a .git file was read as a worktrees folder")
+	}
+}

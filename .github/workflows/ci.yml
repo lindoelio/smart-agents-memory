@@ -125,3 +125,25 @@ jobs:
           ./smart-agents-memory --vault obsidian --memory-home "$STORE" search "lesson"
           ./smart-agents-memory --vault obsidian --memory-home "$STORE" install
           ./smart-agents-memory --vault obsidian --memory-home "$STORE" doctor
+
+  coverage:
+    name: Coverage gates
+    runs-on: ubuntu-latest
+
+    env:
+      STATEMENT_MIN: '90'
+      LINES_MIN: '90'
+      FUNCTION_MIN: '90'
+      DECISION_MIN: '80'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run the coverage gates
+        run: ./scripts/coverage.sh

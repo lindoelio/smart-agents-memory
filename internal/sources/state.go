@@ -29,6 +29,7 @@ type SourceState struct {
 	LastSync time.Time `json:"last_sync,omitempty"`
 	Files    int       `json:"files,omitempty"`
 	Errors   []string  `json:"errors,omitempty"`
+	Seeded   bool      `json:"seeded,omitempty"`
 }
 
 // SyncState is the content of .sync-state.json.

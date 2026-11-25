@@ -72,6 +72,7 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 		maxBytes = sources.DefaultMaxBytes
 	}
 	reg := sources.Build(a.Cfg.SyncRoots, a.Cfg.SyncDisabled, maxBytes, a.Cfg.WatchDirs)
+	allSources := reg.Enabled()
 	if opts.SourceID != "" {
 		source, ok := reg.ByID(opts.SourceID)
 		if !ok {
@@ -99,15 +100,21 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 	}
 	now := time.Now()
 	state.PruneSeen(now, syncSeenTTL)
-	if opts.Backfill && state.Seeded {
+	if opts.Backfill {
 		resetForBackfill(state)
 	}
-	seeding := !state.Seeded && !opts.Backfill
-	report.Seeded = seeding
 
 	for _, source := range enabled {
 		beforeFiles := report.Files
-		reportSource := sources.SourceState{LastSync: now}
+		sourceSaved := state.Sources[source.ID]
+		if state.Seeded && !sourceSaved.Seeded {
+			// A state written before per-source seeding already covered the
+			// sources that existed then. New sources are seeded from here.
+			sourceSaved.Seeded = true
+		}
+		seeding := !opts.Backfill && !sourceSaved.Seeded && !state.Seeded
+		report.Seeded = report.Seeded || seeding
+		reportSource := sources.SourceState{LastSync: now, Seeded: sourceSaved.Seeded}
 		var sourceErr error
 		switch source.Kind {
 		case sources.KindSQLite:
@@ -119,12 +126,22 @@ func (a *App) Sync(ctx context.Context, opts SyncOptions) (SyncReport, error) {
 			reportSource.Errors = append(reportSource.Errors, sourceErr.Error())
 			report.Errors = append(report.Errors, source.ID+": "+sourceErr.Error())
 		}
+		if seeding || opts.Backfill {
+			reportSource.Seeded = true
+		}
 		reportSource.Files = report.Files - beforeFiles
 		state.Sources[source.ID] = reportSource
 	}
 
+	allSeeded := true
+	for _, source := range allSources {
+		if !state.Sources[source.ID].Seeded {
+			allSeeded = false
+			break
+		}
+	}
 	if !opts.DryRun {
-		state.Seeded = true
+		state.Seeded = allSeeded
 		if err := sources.SaveState(a.syncStatePath(), state); err != nil {
 			return report, err
 		}

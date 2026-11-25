@@ -304,3 +304,52 @@ func TestSyncSQLiteReportsMalformedData(t *testing.T) {
 		t.Fatalf("the malformed sqlite data was ignored: %+v", report)
 	}
 }
+
+func TestSyncSeedsPerSource(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	writeCursorSession(t, h.home, `{"role":"user","content":"cursor history"}`)
+	qwenPath := filepath.Join(h.home, ".qwen", "projects", "p", "chats", "s.jsonl")
+	if err := os.MkdirAll(filepath.Dir(qwenPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(qwenPath, []byte(`{"role":"user","content":"qwen history"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fake := &extractLLM{payload: `{"candidates":[]}`}
+	h.app.LLM = fake
+	if _, err := h.app.Sync(ctx, app.SyncOptions{SourceID: "cursor"}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 0 {
+		t.Fatalf("the cursor seed called the model: %d", fake.calls)
+	}
+	state, err := sources.LoadState(filepath.Join(h.root, ".sync-state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.Seeded {
+		t.Fatal("the global state was marked seeded after one source")
+	}
+	if _, err := h.app.Sync(ctx, app.SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 0 {
+		t.Fatalf("seeding qwen called the model: %d", fake.calls)
+	}
+	f, err := os.OpenFile(qwenPath, os.O_APPEND|os.O_WRONLY, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.WriteString(`{"role":"user","content":"a new qwen rule"}` + "\n"); err != nil {
+		f.Close()
+		t.Fatal(err)
+	}
+	f.Close()
+	if _, err := h.app.Sync(ctx, app.SyncOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	if fake.calls != 1 {
+		t.Fatalf("the new qwen turn called the model %d times", fake.calls)
+	}
+}

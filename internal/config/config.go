@@ -78,6 +78,14 @@ type File struct {
 	LLMKeyEnv string `json:"llm_key_env,omitempty"`
 	// WatchDirs are extra transcript directories for `watch`.
 	WatchDirs []string `json:"watch_dirs,omitempty"`
+	// SyncRoots overrides the roots of a built-in sync source, by source ID.
+	SyncRoots map[string][]string `json:"sync_roots,omitempty"`
+	// SyncDisabled lists sync source IDs that must not run.
+	SyncDisabled []string `json:"sync_disabled,omitempty"`
+	// SyncMaxBytes caps the bytes read from one file in one sync run.
+	SyncMaxBytes int64 `json:"sync_max_bytes,omitempty"`
+	// SyncInterval is the scheduler interval, as a Go duration string.
+	SyncInterval string `json:"sync_interval,omitempty"`
 }
 
 // Load reads the configuration file. A missing file is not an error.
@@ -147,6 +155,10 @@ func Resolve(opts Options) (vault.Config, string, error) {
 		LLMModel:       firstNonEmpty(os.Getenv(EnvLLMModel), file.LLMModel),
 		LLMKeyEnv:      firstNonEmpty(os.Getenv(EnvLLMKeyEnv), file.LLMKeyEnv, DefaultLLMKeyEnv),
 		WatchDirs:      file.WatchDirs,
+		SyncRoots:      file.SyncRoots,
+		SyncDisabled:   file.SyncDisabled,
+		SyncMaxBytes:   file.SyncMaxBytes,
+		SyncInterval:   file.SyncInterval,
 	}
 
 	if home := firstNonEmpty(opts.MemoryHome, os.Getenv(EnvHome)); home != "" {

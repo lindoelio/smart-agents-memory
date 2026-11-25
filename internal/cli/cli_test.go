@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -67,7 +68,7 @@ func TestTheHelpListsTheCommands(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("the exit code is %d", code)
 	}
-	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "dream", "extract", "watch", "log", "index", "install", "doctor", "path", "migrate", "version"} {
+	for _, command := range []string{"search", "brief", "add", "pin", "unpin", "prune-worktrees", "recall", "mcp", "dream", "extract", "sync", "watch", "log", "index", "install", "doctor", "path", "migrate", "version"} {
 		if !strings.Contains(out, command) {
 			t.Errorf("the help does not mention %q", command)
 		}
@@ -786,4 +787,153 @@ func TestTheHelpAnswersWithoutAStore(t *testing.T) {
 	if !strings.Contains(out, "Usage:") {
 		t.Fatalf("the help is missing: %q", out)
 	}
+}
+
+func TestSyncSeedsExtractsAndDryRuns(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".cursor", "projects", "p", "agent-transcripts", "s", "s.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"role":"user","content":"Remember the sync CLI rule. Why: it must resume."}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	server := llmServer(t, `{"candidates":[{"scope":"lesson","title":"A sync CLI rule","body":"The rule. Why it matters."}]}`, &calls)
+	t.Setenv("SMART_AGENTS_MEMORY_LLM_URL", server.URL)
+
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "sync", "--backfill", "--json")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, `"added":1`) || calls != 1 {
+		t.Fatalf("the sync report is %q calls=%d", out, calls)
+	}
+
+	code, out, errOut = run(t, "--vault", "obsidian", "--memory-home", root, "sync", "--dry-run", "--backfill", "--json")
+	if code != 0 {
+		t.Fatalf("the dry run exit code is %d: %s %s", code, out, errOut)
+	}
+	if calls != 1 {
+		t.Fatalf("the dry run called the model: calls=%d", calls)
+	}
+}
+
+func TestWatchOnceIsASyncAlias(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "watch", "--once")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(errOut, "watch is deprecated") {
+		t.Fatalf("the deprecation warning is %q", errOut)
+	}
+}
+
+func TestInstallSchedulerDryRunAndRemove(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "install", "--scheduler", "--dry-run")
+	if code != 0 {
+		t.Fatalf("the dry run exit code is %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, "com.smart-agents-memory.sync") || !strings.Contains(out, "sync") {
+		t.Fatalf("the scheduler snippet is %q", out)
+	}
+	plist := filepath.Join(home, "Library", "LaunchAgents", "com.smart-agents-memory.sync.plist")
+	if _, err := os.Stat(plist); !os.IsNotExist(err) {
+		t.Fatal("the dry run wrote the scheduler")
+	}
+}
+
+func TestSyncRejectsAnInvalidSince(t *testing.T) {
+	code, _, errOut := run(t, "sync", "--since", "not-a-duration")
+	if code != 2 || !strings.Contains(errOut, "invalid duration") {
+		t.Fatalf("the exit code is %d: %q", code, errOut)
+	}
+}
+
+func TestDoctorReportsSources(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	code, out, _ := run(t, "--vault", "obsidian", "--memory-home", root, "doctor")
+	if code != 1 {
+		// The doctor may report the missing links; the source notes must be
+		// there regardless.
+		if !strings.Contains(out, "source ") {
+			t.Fatalf("the doctor output is %q", out)
+		}
+	}
+	if !strings.Contains(out, "source cursor:") {
+		t.Fatalf("the source matrix is missing: %q", out)
+	}
+}
+
+func TestSyncSeedsWithoutAnLLM(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(home, ".cursor", "projects", "p", "agent-transcripts", "s", "s.jsonl")
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(`{"role":"user","content":"history"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "sync", "--source", "cursor")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, "seeded=") {
+		t.Fatalf("the seed output is %q", out)
+	}
+}
+
+func TestInstallSchedulerWritesAndRemoves(t *testing.T) {
+	root := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "install", "--scheduler", "--interval", "2m")
+	if code != 0 {
+		t.Fatalf("the install exit code is %d: %s %s", code, out, errOut)
+	}
+	if !strings.Contains(out, "[scheduler]") {
+		t.Fatalf("the scheduler output is %q", out)
+	}
+	path := schedulerPath(home)
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("the scheduler was not written: %v", err)
+	}
+	code, _, errOut = run(t, "--vault", "obsidian", "--memory-home", root, "install", "--no-scheduler")
+	if code != 0 {
+		t.Fatalf("the remove exit code is %d: %s", code, errOut)
+	}
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatal("the plist survived removal")
+	}
+}
+
+func schedulerPath(home string) string {
+	if runtime.GOOS == "linux" {
+		return filepath.Join(home, ".config", "systemd", "user", "smart-agents-memory-sync.service")
+	}
+	return filepath.Join(home, "Library", "LaunchAgents", "com.smart-agents-memory.sync.plist")
 }

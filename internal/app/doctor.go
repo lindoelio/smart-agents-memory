@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/link"
@@ -149,6 +150,27 @@ func (a *App) Doctor(ctx context.Context) (DoctorReport, error) {
 		if _, err := os.Stat(path); err != nil {
 			report.Problems = append(report.Problems, "skill not installed: "+path+" (run `smart-agents-memory install`)")
 		}
+	}
+
+	// Capture sources are reported, not failed: a harness may not be
+	// installed on this machine.
+	for _, status := range a.SourceStatuses() {
+		line := "source " + status.ID + ": "
+		switch {
+		case !status.Enabled:
+			line += "disabled"
+		case status.Exists:
+			line += "ok"
+		default:
+			line += "missing"
+		}
+		if !status.LastSync.IsZero() {
+			line += fmt.Sprintf(", last sync %s ago", time.Since(status.LastSync).Round(time.Second))
+		}
+		if len(status.Errors) > 0 {
+			line += ", errors: " + strings.Join(status.Errors, "; ")
+		}
+		report.Notes = append(report.Notes, line)
 	}
 
 	return report, nil

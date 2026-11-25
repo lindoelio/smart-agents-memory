@@ -7,11 +7,13 @@ package cli
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -102,6 +104,8 @@ func Run(ctx context.Context, args []string, out, errOut io.Writer) int {
 		return cmdExtract(ctx, opts, commandArgs, out, errOut)
 	case "watch":
 		return cmdWatch(ctx, opts, commandArgs, out, errOut)
+	case "sync":
+		return cmdSync(ctx, opts, commandArgs, out, errOut)
 	case "log":
 		return cmdLog(ctx, opts, commandArgs, out, errOut)
 	case "index":
@@ -581,13 +585,23 @@ func cmdExtract(ctx context.Context, opts config.Options, args []string, out, er
 	return 0
 }
 
-// cmdWatch scans transcript directories and extracts new turns.
-func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
-	fs := newFlagSet("watch", out, errOut, &opts)
-	once := fs.Bool("once", false, "scan once and exit")
-	interval := fs.Duration("interval", 5*time.Minute, "scan interval")
+// cmdSync reads the transcript artifacts that changed since the last run.
+func cmdSync(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("sync", out, errOut, &opts)
+	dryRun := fs.Bool("dry-run", false, "report without calling the model or writing state")
+	backfill := fs.Bool("backfill", false, "process existing history instead of seeding it")
+	since := fs.String("since", "", "only process files modified within this duration (for example 7d or 24h)")
+	source := fs.String("source", "", "run only one source")
+	asJSON := fs.Bool("json", false, "print the report as JSON")
+	quiet := fs.Bool("quiet", false, "print nothing")
+	maxBytes := fs.Int64("max-bytes", 0, "maximum bytes read from one file in this run")
 	autoDream := fs.Bool("auto-dream", false, "run dream when the dirty threshold is reached")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	sinceDuration, err := parseSince(*since)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 2
 	}
 	a, err := build(opts, out, errOut)
@@ -599,34 +613,93 @@ func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errO
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	if a.LLM == nil {
-		fmt.Fprintln(errOut, "error: watching needs an LLM client")
+	report, err := a.Sync(ctx, app.SyncOptions{
+		DryRun: *dryRun, Backfill: *backfill, Since: sinceDuration,
+		SourceID: *source, MaxBytes: *maxBytes, AutoDream: *autoDream,
+	})
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	run := func() error {
-		report, err := a.WatchOnce(ctx, app.WatchOptions{AutoDream: *autoDream})
-		if err != nil {
-			return err
-		}
-		for _, warning := range report.Errors {
-			fmt.Fprintln(errOut, "warning: "+warning)
-		}
-		if report.Extracted > 0 || report.Added > 0 || report.Ignored > 0 {
-			fmt.Fprintf(out, "watch: files=%d candidates=%d added=%d ignored=%d\n",
-				report.Files, report.Extracted, report.Added, report.Ignored)
-		}
-		return nil
+	for _, warning := range report.Errors {
+		fmt.Fprintln(errOut, "warning: "+warning)
 	}
-	if *once {
-		if err := run(); err != nil {
-			fmt.Fprintln(errOut, "error: "+err.Error())
+	if *quiet {
+		if len(report.Errors) > 0 {
 			return 1
 		}
 		return 0
 	}
-	if err := run(); err != nil {
-		fmt.Fprintln(errOut, "warning: "+err.Error())
+	if *asJSON {
+		if err := json.NewEncoder(out).Encode(report); err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+	} else if report.Seeded {
+		fmt.Fprintf(out, "sync: seeded=%d sources=%d\n", report.Files, report.Sources)
+	} else {
+		fmt.Fprintf(out, "sync: sources=%d files=%d changed=%d turns=%d candidates=%d added=%d skipped=%d errors=%d\n",
+			report.Sources, report.Files, report.Changed, report.Turns, report.Candidates,
+			report.Added, report.Skipped, len(report.Errors))
 	}
+	if len(report.Errors) > 0 {
+		return 1
+	}
+	return 0
+}
+
+func parseSince(value string) (time.Duration, error) {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0, nil
+	}
+	if strings.HasSuffix(value, "d") {
+		days, err := strconv.Atoi(strings.TrimSuffix(value, "d"))
+		if err != nil || days <= 0 {
+			return 0, fmt.Errorf("invalid duration %q", value)
+		}
+		return time.Duration(days) * 24 * time.Hour, nil
+	}
+	duration, err := time.ParseDuration(value)
+	if err != nil || duration <= 0 {
+		return 0, fmt.Errorf("invalid duration %q", value)
+	}
+	return duration, nil
+}
+
+// cmdWatch keeps the old entrypoint as a deprecated alias of sync.
+func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
+	fs := newFlagSet("watch", out, errOut, &opts)
+	once := fs.Bool("once", false, "scan once and exit")
+	interval := fs.Duration("interval", 5*time.Minute, "scan interval")
+	autoDream := fs.Bool("auto-dream", false, "run dream when the dirty threshold is reached")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	fmt.Fprintln(errOut, "warning: watch is deprecated; use sync")
+	if *once {
+		return cmdSync(ctx, opts, []string{"--auto-dream=" + strconv.FormatBool(*autoDream)}, out, errOut)
+	}
+	a, err := build(opts, out, errOut)
+	if err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	if err := a.RequireStore(ctx); err != nil {
+		fmt.Fprintln(errOut, "error: "+err.Error())
+		return 1
+	}
+	run := func() {
+		report, err := a.Sync(ctx, app.SyncOptions{AutoDream: *autoDream})
+		if err != nil {
+			fmt.Fprintln(errOut, "warning: "+err.Error())
+			return
+		}
+		for _, warning := range report.Errors {
+			fmt.Fprintln(errOut, "warning: "+warning)
+		}
+	}
+	run()
 	ticker := time.NewTicker(*interval)
 	defer ticker.Stop()
 	for {
@@ -634,9 +707,7 @@ func cmdWatch(ctx context.Context, opts config.Options, args []string, out, errO
 		case <-ctx.Done():
 			return 0
 		case <-ticker.C:
-			if err := run(); err != nil {
-				fmt.Fprintln(errOut, "warning: "+err.Error())
-			}
+			run()
 		}
 	}
 }
@@ -707,8 +778,16 @@ func cmdIndex(ctx context.Context, opts config.Options, args []string, out, errO
 // cmdInstall links the tools to the store.
 func cmdInstall(ctx context.Context, opts config.Options, args []string, out, errOut io.Writer) int {
 	fs := newFlagSet("install", out, errOut, &opts)
-	hooks := fs.Bool("hooks", false, "materialize the post-turn hook script")
+	hooks := fs.Bool("hooks", false, "materialize the experimental post-turn hook script")
+	scheduler := fs.Bool("scheduler", false, "install the periodic sync scheduler")
+	noScheduler := fs.Bool("no-scheduler", false, "remove the periodic sync scheduler")
+	interval := fs.Duration("interval", 0, "scheduler interval (default 5m)")
+	dryRun := fs.Bool("dry-run", false, "print the scheduler without writing")
 	if err := fs.Parse(args); err != nil {
+		return 2
+	}
+	if *dryRun && !*scheduler && !*noScheduler {
+		fmt.Fprintln(errOut, "error: --dry-run requires --scheduler or --no-scheduler")
 		return 2
 	}
 	a, err := build(opts, out, errOut)
@@ -716,16 +795,18 @@ func cmdInstall(ctx context.Context, opts config.Options, args []string, out, er
 		fmt.Fprintln(errOut, "error: "+err.Error())
 		return 1
 	}
-	result, err := a.Install(ctx)
-	if err != nil {
-		fmt.Fprintln(errOut, "error: "+err.Error())
-		return 1
+	if !*dryRun {
+		result, err := a.Install(ctx)
+		if err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+		fmt.Fprintf(out, "store: %s\n", result.Store)
+		for _, line := range result.Lines {
+			fmt.Fprintln(out, "[ok] "+line)
+		}
 	}
-	fmt.Fprintf(out, "store: %s\n", result.Store)
-	for _, line := range result.Lines {
-		fmt.Fprintln(out, "[ok] "+line)
-	}
-	if *hooks {
+	if *hooks && !*dryRun {
 		_, lines, err := a.InstallHooks()
 		if err != nil {
 			fmt.Fprintln(errOut, "error: "+err.Error())
@@ -733,6 +814,30 @@ func cmdInstall(ctx context.Context, opts config.Options, args []string, out, er
 		}
 		for _, line := range lines {
 			fmt.Fprintln(out, "[hook] "+line)
+		}
+	}
+	if *scheduler || *noScheduler {
+		runInterval := *interval
+		if runInterval <= 0 && a.Cfg.SyncInterval != "" {
+			if parsed, err := time.ParseDuration(a.Cfg.SyncInterval); err == nil {
+				runInterval = parsed
+			}
+		}
+		result, err := a.ConfigureScheduler(app.SchedulerOptions{
+			Interval: runInterval, DryRun: *dryRun, Remove: *noScheduler,
+		})
+		if err != nil {
+			fmt.Fprintln(errOut, "error: "+err.Error())
+			return 1
+		}
+		for _, path := range result.Paths {
+			fmt.Fprintln(out, "[scheduler] "+path)
+		}
+		for _, action := range result.Actions {
+			fmt.Fprintln(out, "[scheduler] "+action)
+		}
+		if *dryRun {
+			fmt.Fprint(out, result.Content)
 		}
 	}
 	return 0
@@ -883,7 +988,8 @@ Commands:
   mcp                  serve the MCP tools over stdin/stdout
   dream                consolidate the cold memory
   extract              extract durable facts from a transcript
-  watch                scan transcript directories
+  sync                 capture new turns from the harness transcripts
+  watch                deprecated alias of sync
   log                  the write log, newest first
   index                reconcile the corpus with the native projections
   install              link the tools to the store

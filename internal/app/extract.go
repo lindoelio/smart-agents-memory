@@ -152,40 +152,12 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 		}
 		return report, nil
 	}
-	if a.LLM == nil {
-		return report, fmt.Errorf("extraction needs an LLM client")
-	}
 
-	manifest := a.extractManifest(ctx)
-	request := a.extractPrompt(turns[start:], manifest)
-	var response struct {
-		Candidates []ExtractCandidate `json:"candidates"`
-	}
-	if err := a.LLM.CompleteJSON(ctx, request, &response); err != nil {
+	inner, err := a.ExtractTurns(ctx, turns[start:], opts)
+	if err != nil {
 		return report, err
 	}
-
-	existing := a.extractExisting(ctx)
-	for _, candidate := range response.Candidates {
-		report.Candidates++
-		outcome := a.extractCandidate(ctx, candidate, existing, opts)
-		if outcome.Err != nil {
-			// A failed write is not a rejection: the candidate is still
-			// owed, so the cursor stays where it was for the next run.
-			return report, fmt.Errorf("cannot persist %q: %w", candidate.Title, outcome.Err)
-		}
-		if outcome.Reason != "" {
-			report.Skipped = append(report.Skipped, candidate.Title+": "+outcome.Reason)
-			continue
-		}
-		if outcome.Accepted {
-			report.Accepted++
-		}
-		if outcome.Added {
-			report.Added++
-		}
-	}
-
+	report = inner
 	report.Cursor = extract.SessionCursor{
 		SessionID: sessionID, TranscriptPath: opts.TranscriptPath,
 		ProcessedOffset: len(turns), UpdatedAt: time.Now(),
@@ -206,6 +178,51 @@ func (a *App) Extract(ctx context.Context, opts ExtractOptions) (ExtractReport, 
 				return report, err
 			}
 			report.Dream = &dream
+		}
+	}
+	return report, nil
+}
+
+// ExtractTurns asks the model for durable knowledge from already parsed
+// turns. The caller owns the cursor: sync uses this after reading a file,
+// and Extract uses it after resolving the manual cursor.
+func (a *App) ExtractTurns(ctx context.Context, turns []extract.Turn, opts ExtractOptions) (ExtractReport, error) {
+	report := ExtractReport{}
+	if !extract.HasNewUserTurn(turns, 0) {
+		report.SkippedReason = "no_new_user_turns"
+		return report, nil
+	}
+	if a.LLM == nil {
+		return report, fmt.Errorf("extraction needs an LLM client")
+	}
+
+	manifest := a.extractManifest(ctx)
+	request := a.extractPrompt(turns, manifest)
+	var response struct {
+		Candidates []ExtractCandidate `json:"candidates"`
+	}
+	if err := a.LLM.CompleteJSON(ctx, request, &response); err != nil {
+		return report, err
+	}
+
+	existing := a.extractExisting(ctx)
+	for _, candidate := range response.Candidates {
+		report.Candidates++
+		outcome := a.extractCandidate(ctx, candidate, existing, opts)
+		if outcome.Err != nil {
+			// A failed write is not a rejection: the candidate is still
+			// owed, so the caller must not move the cursor.
+			return report, fmt.Errorf("cannot persist %q: %w", candidate.Title, outcome.Err)
+		}
+		if outcome.Reason != "" {
+			report.Skipped = append(report.Skipped, candidate.Title+": "+outcome.Reason)
+			continue
+		}
+		if outcome.Accepted {
+			report.Accepted++
+		}
+		if outcome.Added {
+			report.Added++
 		}
 	}
 	return report, nil

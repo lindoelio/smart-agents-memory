@@ -287,6 +287,10 @@ func (a *App) Install(ctx context.Context) (InstallResult, error) {
 				LLMModel:       a.Cfg.LLMModel,
 				LLMKeyEnv:      a.Cfg.LLMKeyEnv,
 				WatchDirs:      a.Cfg.WatchDirs,
+				SyncRoots:      a.Cfg.SyncRoots,
+				SyncDisabled:   a.Cfg.SyncDisabled,
+				SyncMaxBytes:   a.Cfg.SyncMaxBytes,
+				SyncInterval:   a.Cfg.SyncInterval,
 			}
 			if err := config.Save(a.ConfigPath, file); err == nil {
 				result.Lines = append(result.Lines, "config: "+a.ConfigPath)

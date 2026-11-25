@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 )
@@ -25,25 +26,34 @@ type report struct {
 }
 
 func main() {
-	file := flag.String("file", "", "limgo JSON report")
-	minLines := flag.Float64("min", 90, "minimum line coverage")
-	flag.Parse()
-	if *file == "" {
-		fmt.Fprintln(os.Stderr, "coveragecheck: -file is required")
-		os.Exit(2)
-	}
-	value, err := check(*file, *minLines)
-	if err != nil {
-		fmt.Fprintln(os.Stderr, "coveragecheck: "+err.Error())
-		os.Exit(2)
-	}
-	fmt.Printf("lines: %.2f%% (minimum %.2f%%)\n", value, *minLines)
-	if value < *minLines {
-		os.Exit(1)
-	}
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
 }
 
-func check(path string, min float64) (float64, error) {
+func run(args []string, stdout, stderr io.Writer) int {
+	flags := flag.NewFlagSet("coveragecheck", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	file := flags.String("file", "", "limgo JSON report")
+	minLines := flags.Float64("min", 90, "minimum line coverage")
+	if err := flags.Parse(args); err != nil {
+		return 2
+	}
+	if *file == "" {
+		fmt.Fprintln(stderr, "coveragecheck: -file is required")
+		return 2
+	}
+	value, err := check(*file)
+	if err != nil {
+		fmt.Fprintln(stderr, "coveragecheck: "+err.Error())
+		return 2
+	}
+	fmt.Fprintf(stdout, "lines: %.2f%% (minimum %.2f%%)\n", value, *minLines)
+	if value < *minLines {
+		return 1
+	}
+	return 0
+}
+
+func check(path string) (float64, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return 0, err

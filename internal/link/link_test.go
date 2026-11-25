@@ -1,6 +1,7 @@
 package link
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -294,5 +295,32 @@ func TestLinkReportsAReadOnlyFolder(t *testing.T) {
 	}
 	if _, err := Link(target, source, false); err == nil {
 		t.Fatal("a link in a read-only folder was replaced")
+	}
+}
+
+func TestLinkReportsAnExhaustedBackupName(t *testing.T) {
+	dir := t.TempDir()
+	source := filepath.Join(dir, "MEMORY.md")
+	if err := os.WriteFile(source, []byte("hot"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(dir, "AGENTS.md")
+	if err := os.WriteFile(target, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := target + BackupSuffix
+	if err := os.WriteFile(base, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for n := 2; n < 1000; n++ {
+		if err := os.WriteFile(fmt.Sprintf("%s-%d", base, n), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := Link(target, source, false); err == nil {
+		t.Fatal("a link was created with no free backup name")
+	}
+	if _, err := backupPath(target); err == nil {
+		t.Fatal("backupPath found a free name that does not exist")
 	}
 }

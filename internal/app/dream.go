@@ -61,16 +61,19 @@ func (a *App) dreamStatePath() string { return filepath.Join(a.LocalRoot, dreamS
 func (a *App) dreamLockPath() string  { return filepath.Join(a.LocalRoot, dreamLockFile) }
 
 func (a *App) loadDreamState() DreamState {
-	state := DreamState{Version: 1}
+	state := DreamState{Version: 1, LastStatus: "idle"}
 	data, err := os.ReadFile(a.dreamStatePath())
 	if err != nil {
 		return state
 	}
 	if err := json.Unmarshal(data, &state); err != nil {
-		return DreamState{Version: 1}
+		return DreamState{Version: 1, LastStatus: "idle"}
 	}
 	if state.Version == 0 {
 		state.Version = 1
+	}
+	if state.LastStatus == "" {
+		state.LastStatus = "idle"
 	}
 	return state
 }
@@ -87,11 +90,19 @@ func (a *App) saveDreamState(state DreamState) error {
 	return os.WriteFile(a.dreamStatePath(), append(data, '\n'), 0o644)
 }
 
-// bumpDirty records one mutation for the next Dream. It is best-effort: a
-// state-file failure must not lose the memory the caller just wrote.
-func (a *App) bumpDirty() {
+// bumpDirty records one mutation for the next Dream.
+func (a *App) bumpDirty() { a.bumpDirtyBy(1) }
+
+// bumpDirtyBy records n mutations. The native import counts the entries it
+// added or updated, so the dirty count and the number of memories agree.
+// It is best-effort: a state-file failure must not lose the memory the
+// caller just wrote.
+func (a *App) bumpDirtyBy(n int) {
+	if n <= 0 {
+		return
+	}
 	state := a.loadDreamState()
-	state.DirtyMutations++
+	state.DirtyMutations += n
 	if err := a.saveDreamState(state); err != nil && a.Err != nil {
 		fmt.Fprintln(a.Err, "warning: cannot update dream state: "+err.Error())
 	}
@@ -130,8 +141,8 @@ func (a *App) acquireDreamLock() (func(), error) {
 }
 
 // Dream runs the deterministic pass and, when configured, the LLM pass.
-func (a *App) Dream(ctx context.Context, opts DreamOptions) (DreamReport, error) {
-	report := DreamReport{DryRun: opts.DryRun}
+func (a *App) Dream(ctx context.Context, opts DreamOptions) (report DreamReport, err error) {
+	report.DryRun = opts.DryRun
 	state := a.loadDreamState()
 	if opts.MinDirty > 0 && state.DirtyMutations < opts.MinDirty {
 		return report, nil
@@ -142,30 +153,44 @@ func (a *App) Dream(ctx context.Context, opts DreamOptions) (DreamReport, error)
 	}
 	defer release()
 
+	// A dry run reports; it never writes a memory or the state file.
+	if !opts.DryRun {
+		state.LastStatus = "running"
+		if saveErr := a.saveDreamState(state); saveErr != nil {
+			return report, saveErr
+		}
+		defer func() {
+			if err != nil {
+				state.LastStatus = "failed"
+				_ = a.saveDreamState(state)
+			}
+		}()
+	}
+
 	original, err := a.Vault.Entries(ctx)
 	if err != nil {
 		return report, err
 	}
-	merged, deleted, err := a.dreamDedupe(ctx, original, opts.DryRun)
+	merged, deleted, survivors, err := a.dreamDedupe(ctx, original, opts.DryRun)
 	if err != nil {
 		return report, err
 	}
 	report.Merged = merged
 	report.Deleted = deleted
-	backfilled, err := a.dreamBackfill(ctx, opts.DryRun)
+	backfilled, err := a.dreamBackfill(ctx, survivors, opts.DryRun)
 	if err != nil {
 		return report, err
 	}
 	report.Backfilled = backfilled
 
 	if a.LLM != nil && !opts.DeterministicOnly {
-		operations, err := a.dreamPlan(ctx)
-		if err != nil {
-			return report, err
+		operations, planErr := a.dreamPlan(ctx, survivors)
+		if planErr != nil {
+			return report, planErr
 		}
-		updated, merged2, deleted2, err := a.dreamApply(ctx, original, operations, opts.DryRun)
-		if err != nil {
-			return report, err
+		updated, merged2, deleted2, applyErr := a.dreamApply(ctx, original, operations, opts.DryRun)
+		if applyErr != nil {
+			return report, applyErr
 		}
 		report.Updated += updated
 		report.Merged += merged2
@@ -173,10 +198,6 @@ func (a *App) Dream(ctx context.Context, opts DreamOptions) (DreamReport, error)
 	}
 
 	if opts.DryRun {
-		state.LastStatus = "noop"
-		if err := a.saveDreamState(state); err != nil {
-			return report, err
-		}
 		return report, nil
 	}
 	if _, err := a.index(ctx, indexOptions{skipNativeImport: true}); err != nil {
@@ -199,7 +220,7 @@ func (a *App) Dream(ctx context.Context, opts DreamOptions) (DreamReport, error)
 	return report, nil
 }
 
-func (a *App) dreamDedupe(ctx context.Context, corpus []memory.Entry, dry bool) (int, int, error) {
+func (a *App) dreamDedupe(ctx context.Context, corpus []memory.Entry, dry bool) (int, int, []memory.Entry, error) {
 	active := append([]memory.Entry(nil), corpus...)
 	removed := map[int]bool{}
 	merged, deleted := 0, 0
@@ -255,7 +276,7 @@ func (a *App) dreamDedupe(ctx context.Context, corpus []memory.Entry, dry bool) 
 				}
 			}
 			if err := merge(survivor, others); err != nil {
-				return merged, deleted, err
+				return merged, deleted, nil, err
 			}
 			changed = true
 		}
@@ -286,7 +307,7 @@ func (a *App) dreamDedupe(ctx context.Context, corpus []memory.Entry, dry bool) 
 				}
 			}
 			if err := merge(survivor, others); err != nil {
-				return merged, deleted, err
+				return merged, deleted, nil, err
 			}
 			changed = true
 		}
@@ -294,7 +315,20 @@ func (a *App) dreamDedupe(ctx context.Context, corpus []memory.Entry, dry bool) 
 			break
 		}
 	}
-	return merged, deleted, nil
+	return merged, deleted, dreamSurvivors(active, removed), nil
+}
+
+// dreamSurvivors returns the entries the run keeps: the active set without
+// the indices that were merged away. A dry run uses it to report the same
+// counts a real run would produce.
+func dreamSurvivors(active []memory.Entry, removed map[int]bool) []memory.Entry {
+	out := make([]memory.Entry, 0, len(active))
+	for i := range active {
+		if !removed[i] {
+			out = append(out, active[i])
+		}
+	}
+	return out
 }
 
 func protectedForDream(e memory.Entry) bool {
@@ -315,13 +349,10 @@ func newestEntry(entries []memory.Entry, group []int) int {
 	return survivor
 }
 
-func (a *App) dreamBackfill(ctx context.Context, dry bool) (int, error) {
-	entries, err := a.Vault.Entries(ctx)
-	if err != nil {
-		return 0, err
-	}
+func (a *App) dreamBackfill(ctx context.Context, entries []memory.Entry, dry bool) (int, error) {
 	backfilled := 0
-	for _, entry := range entries {
+	for i := range entries {
+		entry := entries[i]
 		if protectedForDream(entry) {
 			continue
 		}
@@ -337,6 +368,9 @@ func (a *App) dreamBackfill(ctx context.Context, dry bool) (int, error) {
 		if !changed {
 			continue
 		}
+		// The caller keeps the set for the LLM stage, so the new
+		// metadata is visible to it in a dry run and in a real one.
+		entries[i] = entry
 		if !dry {
 			if err := a.Vault.Update(ctx, entry); err != nil {
 				return backfilled, err
@@ -365,11 +399,7 @@ func dreamDescription(e memory.Entry) string {
 	return e.Title
 }
 
-func (a *App) dreamPlan(ctx context.Context) ([]DreamOperation, error) {
-	entries, err := a.Vault.Entries(ctx)
-	if err != nil {
-		return nil, err
-	}
+func (a *App) dreamPlan(ctx context.Context, entries []memory.Entry) ([]DreamOperation, error) {
 	groups := map[string][]memory.Entry{}
 	for _, entry := range entries {
 		if protectedForDream(entry) {
@@ -450,7 +480,7 @@ func (a *App) dreamApply(ctx context.Context, original []memory.Entry, operation
 		} else if op.Action != "update" {
 			continue
 		}
-		if strings.TrimSpace(op.NewBody) == "" || !memory.IsEnglish(op.NewBody) {
+		if strings.TrimSpace(op.NewBody) == "" || !memory.IsEnglishStrict(op.NewBody) {
 			continue
 		}
 		if err := secretguard.Check(op.NewTitle, op.NewBody); err != nil {

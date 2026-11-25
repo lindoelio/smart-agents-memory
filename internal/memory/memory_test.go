@@ -300,3 +300,43 @@ func TestIsEnglish(t *testing.T) {
 		t.Fatal("a short text warns")
 	}
 }
+
+func TestIsEnglishStrict(t *testing.T) {
+	cases := []struct {
+		text string
+		want bool
+	}{
+		{"Não faça isso porque quebra o build.", false},
+		{"Fix the bug now.", true},
+		{"sqlite migration", true},
+		{"A regra e que voce sempre escreve o porque, porque uma regra sem motivo nao serve para nada aqui.", false},
+		{"The rule is that you always write the why, because a rule without a why is not reusable at all.", true},
+	}
+	for _, tc := range cases {
+		if got := IsEnglishStrict(tc.text); got != tc.want {
+			t.Errorf("IsEnglishStrict(%q) = %v, want %v", tc.text, got, tc.want)
+		}
+	}
+}
+
+func TestKeywordsWithYAMLPunctuationRoundTrip(t *testing.T) {
+	entry := Entry{
+		Title:    "A tricky keyword",
+		Type:     TypeLesson,
+		Date:     "2026-11-25",
+		Body:     "The rule. Why: it matters.",
+		Keywords: []string{"plain", "a: b", "#comment", "key: value", "line one\nline two"},
+	}
+	parsed, ok := Parse(Format(entry))
+	if !ok {
+		t.Fatal("the formatted entry did not parse")
+	}
+	if len(parsed.Keywords) != len(entry.Keywords) {
+		t.Fatalf("the keywords are %v", parsed.Keywords)
+	}
+	for i, want := range entry.Keywords {
+		if parsed.Keywords[i] != want {
+			t.Fatalf("keyword %d is %q, want %q", i, parsed.Keywords[i], want)
+		}
+	}
+}

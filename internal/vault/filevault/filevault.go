@@ -99,12 +99,17 @@ func (s *Store) Problems(_ context.Context) ([]string, error) {
 		if !strings.HasSuffix(d.Name(), ".md") {
 			return nil
 		}
-		f, err := os.Open(path)
+		data, err := os.ReadFile(path)
 		if err != nil {
 			problems = append(problems, s.rel(path)+": "+err.Error())
 			return nil
 		}
-		f.Close()
+		// A note that declares a type was meant to be an entry. Without a
+		// title it is invisible to Entries, so it is a problem to report,
+		// not a note to ignore.
+		if _, ok := memory.Parse(string(data)); !ok && noteHasEntryType(string(data)) {
+			problems = append(problems, s.rel(path)+": note without a title")
+		}
 		return nil
 	})
 	if err != nil && !os.IsNotExist(err) {
@@ -144,6 +149,9 @@ func (s *Store) Entries(_ context.Context) ([]memory.Entry, error) {
 func (s *Store) Create(_ context.Context, e memory.Entry) (memory.Entry, error) {
 	if !e.Type.Valid() {
 		return e, fmt.Errorf("invalid entry type %q (use %s)", e.Type, typeList())
+	}
+	if strings.TrimSpace(e.Title) == "" {
+		return e, fmt.Errorf("empty title")
 	}
 	dir := filepath.Join(s.CorpusDir(), string(e.Type))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -301,17 +309,22 @@ func (s *Store) LogLines(_ context.Context, limit int) ([]string, error) {
 		if err != nil {
 			continue
 		}
-		for _, line := range strings.Split(string(data), "\n") {
-			if strings.TrimSpace(line) != "" {
-				out = append(out, line)
+		// The file is append-only, so the newest line is the last one.
+		// The day files are already newest-day first; reading each file
+		// backwards yields the global newest-first order.
+		lines := strings.Split(string(data), "\n")
+		for i := len(lines) - 1; i >= 0; i-- {
+			if strings.TrimSpace(lines[i]) == "" {
+				continue
+			}
+			out = append(out, lines[i])
+			if limit > 0 && len(out) >= limit {
+				break
 			}
 		}
 		if limit > 0 && len(out) >= limit {
 			break
 		}
-	}
-	if limit > 0 && len(out) > limit {
-		out = out[:limit]
 	}
 	return out, nil
 }
@@ -579,6 +592,30 @@ func (s *Store) readEntry(path string) (memory.Entry, bool, error) {
 		entry.ModTime = info.ModTime()
 	}
 	return entry, true, nil
+}
+
+// noteHasEntryType reports whether the note declares an entry type in its
+// frontmatter. A titleless note with a type is a broken entry; a titleless
+// note without one is a project note or an index and is not a problem.
+func noteHasEntryType(text string) bool {
+	if !strings.HasPrefix(text, "---\n") {
+		return false
+	}
+	end := strings.Index(text[4:], "\n---\n")
+	if end < 0 {
+		return false
+	}
+	for _, line := range strings.Split(text[4:4+end], "\n") {
+		rest, found := strings.CutPrefix(strings.TrimSpace(line), "type:")
+		if !found {
+			continue
+		}
+		// The hot tier declares "type: index": it is an index note, not a
+		// broken entry. Only a real entry type makes the missing title a
+		// problem.
+		return memory.Type(strings.Trim(strings.TrimSpace(rest), `"'`)).Valid()
+	}
+	return false
 }
 
 // hasPinnedSegment reports whether a relative path contains a pinned

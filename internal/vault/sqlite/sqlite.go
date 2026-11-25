@@ -286,6 +286,9 @@ func (s *Store) Create(ctx context.Context, e memory.Entry) (memory.Entry, error
 	if !e.Type.Valid() {
 		return e, fmt.Errorf("invalid entry type %q", e.Type)
 	}
+	if strings.TrimSpace(e.Title) == "" {
+		return e, fmt.Errorf("empty title")
+	}
 	db, err := s.readyDB(ctx)
 	if err != nil {
 		return e, err

@@ -42,6 +42,10 @@ here, and it is synthetic.
 - **No secret is ever written to the configuration file.** The file holds
   the backend, the paths and the **name** of the LLM key variable, never the
   key itself.
+- **The LLM client is opt-in.** A command talks to an endpoint only when
+  `llm_enabled`, a base URL or a model asks it to. A key exported for another
+  tool does not enable the client, so a local command cannot become a network
+  call by accident.
 - **No secret is ever written to the store.** The write log records what
   changed and where it came from, never a credential.
 - **SecretGuard blocks high-confidence credentials.** `add`, the native

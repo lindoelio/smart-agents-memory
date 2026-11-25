@@ -3,11 +3,14 @@ package app_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/lindoelio/smart-agents-memory/internal/native"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
@@ -247,5 +250,163 @@ func TestAddIncrementsDreamDirty(t *testing.T) {
 	}
 	if state.DirtyMutations == 0 {
 		t.Fatal("the add did not mark the corpus dirty")
+	}
+}
+
+// readDreamState decodes the state file of a harness.
+func readDreamState(t *testing.T, h *harness) app.DreamState {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(h.root, ".smart-agents-memory-dream.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var state app.DreamState
+	if err := json.Unmarshal(data, &state); err != nil {
+		t.Fatal(err)
+	}
+	return state
+}
+
+func TestDreamDryRunDoesNotTouchTheStateFile(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A rule", Body: "The rule. Why: it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(h.root, ".smart-agents-memory-dream.json")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Dream(ctx, app.DreamOptions{DryRun: true, DeterministicOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("the dry run changed the state:\n%s\n%s", before, after)
+	}
+}
+
+func TestDreamDryRunReportsTheSameCounts(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	createDreamEntry(t, h, memory.Entry{Title: "Same title", Body: "First rule."})
+	createDreamEntry(t, h, memory.Entry{Title: "Same title", Body: "Second rule."})
+	createDreamEntry(t, h, memory.Entry{Title: "A plain lesson", Body: "A plain body."})
+	dry, err := h.app.Dream(ctx, app.DreamOptions{DryRun: true, DeterministicOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	real, err := h.app.Dream(ctx, app.DreamOptions{DeterministicOnly: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dry.Merged != real.Merged || dry.Deleted != real.Deleted || dry.Backfilled != real.Backfilled {
+		t.Fatalf("the dry run is %+v and the real run is %+v", dry, real)
+	}
+}
+
+func TestDreamRecordsFailedStatus(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	h.app.Vault = &faultyVault{Vault: h.app.Vault, entriesErr: errors.New("entries failed")}
+	if _, err := h.app.Dream(context.Background(), app.DreamOptions{DeterministicOnly: true}); err == nil {
+		t.Fatal("the read failure was swallowed")
+	}
+	if state := readDreamState(t, h); state.LastStatus != "failed" {
+		t.Fatalf("the failed status was not recorded: %+v", state)
+	}
+}
+
+// stateProbeVault records the status the state file holds when Dream reads
+// the corpus. It proves the run announces itself before the work starts.
+type stateProbeVault struct {
+	vault.Vault
+	path string
+	seen string
+}
+
+func (v *stateProbeVault) Entries(ctx context.Context) ([]memory.Entry, error) {
+	if data, err := os.ReadFile(v.path); err == nil {
+		var state app.DreamState
+		if json.Unmarshal(data, &state) == nil {
+			v.seen = state.LastStatus
+		}
+	}
+	return v.Vault.Entries(ctx)
+}
+
+func TestDreamRecordsRunningThenUpdated(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A rule", Body: "The rule. Why: it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	probe := &stateProbeVault{Vault: h.app.Vault, path: filepath.Join(h.root, ".smart-agents-memory-dream.json")}
+	h.app.Vault = probe
+	if _, err := h.app.Dream(ctx, app.DreamOptions{DeterministicOnly: true}); err != nil {
+		t.Fatal(err)
+	}
+	if probe.seen != "running" {
+		t.Fatalf("the run did not announce itself: %q", probe.seen)
+	}
+	if state := readDreamState(t, h); state.LastStatus != "updated" && state.LastStatus != "noop" {
+		t.Fatalf("the final status is %+v", state)
+	}
+}
+
+func TestDreamImportCountsEveryEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	for _, name := range []string{"one", "two"} {
+		content := "---\nname: Imported " + name + "\ndescription: Imported\ntype: reference\ncategory: tool_experience\n---\n\nThe rule. Why: import."
+		if err := h.app.Projections.Write(native.TargetQwen, name+".md", content); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := h.app.Index(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if state := readDreamState(t, h); state.DirtyMutations != 2 {
+		t.Fatalf("the dirty count is %d, want 2", state.DirtyMutations)
+	}
+}
+
+func TestDreamWithoutAnEndpointStaysDeterministic(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	createDreamEntry(t, h, memory.Entry{Title: "Same title", Body: "First rule."})
+	createDreamEntry(t, h, memory.Entry{Title: "Same title", Body: "Second rule."})
+	// The application has no LLM client; the semantic pass is skipped
+	// instead of attempted.
+	report, err := h.app.Dream(ctx, app.DreamOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Merged != 1 || report.Deleted != 1 {
+		t.Fatalf("the deterministic pass did not run: %+v", report)
+	}
+}
+
+func TestDreamRecordsFailedStatusAfterALateFailure(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A rule", Body: "The rule. Why: it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	h.app.Vault = &faultyVault{Vault: h.app.Vault, appendErr: errors.New("log failed")}
+	if _, err := h.app.Dream(ctx, app.DreamOptions{DeterministicOnly: true}); err == nil {
+		t.Fatal("the late log failure was swallowed")
+	}
+	if state := readDreamState(t, h); state.LastStatus != "failed" {
+		t.Fatalf("the failed status was not recorded: %+v", state)
 	}
 }

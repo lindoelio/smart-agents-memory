@@ -209,3 +209,41 @@ func TestResolveDiscoveryFailureFallsBack(t *testing.T) {
 		t.Fatalf("the fallback is %q", cfg.MemoryHome)
 	}
 }
+
+func TestLLMToggleDefaultsOff(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(EnvLLMEnabled, "")
+	cfg, _, err := Resolve(Options{Vault: "disk", ConfigPath: filepath.Join(home, "missing.json")})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMEnabled {
+		t.Fatal("the llm toggle defaulted on")
+	}
+}
+
+func TestLLMToggleComesFromTheFileAndTheEnvironment(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(EnvLLMEnabled, "")
+	path := filepath.Join(home, "config.json")
+	if err := Save(path, File{Vault: "disk", LLMEnabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _, err := Resolve(Options{ConfigPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.LLMEnabled {
+		t.Fatal("the file toggle was ignored")
+	}
+	t.Setenv(EnvLLMEnabled, "false")
+	cfg, _, err = Resolve(Options{ConfigPath: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.LLMEnabled {
+		t.Fatal("the environment did not win over the file")
+	}
+}

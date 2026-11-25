@@ -256,32 +256,42 @@ func rankRecall(items []recallItem, query string, categories []string, cwd strin
 	var ranked []scored
 	for _, item := range items {
 		entry := item.entry
+		// Hot entries are already injected into every session; ranking
+		// them again would repeat the profile in the answer.
+		if entry.EffectiveTier() == memory.TierHot {
+			continue
+		}
 		category := memory.InferCategory(entry)
 		if len(categoryFilter) > 0 && !categoryFilter[category] {
 			continue
 		}
-		score := 0
+		base := 0
 		for _, term := range terms {
-			score += 5 * strings.Count(strings.ToLower(entry.Title), term)
+			base += 5 * strings.Count(strings.ToLower(entry.Title), term)
 			for _, keyword := range entry.Keywords {
-				score += 4 * strings.Count(strings.ToLower(keyword), term)
+				base += 4 * strings.Count(strings.ToLower(keyword), term)
 			}
-			score += 3 * strings.Count(strings.ToLower(category), term)
+			base += 3 * strings.Count(strings.ToLower(category), term)
 			for _, scenario := range entry.UsageScenarios {
-				score += 3 * strings.Count(strings.ToLower(scenario), term)
+				base += 3 * strings.Count(strings.ToLower(scenario), term)
 			}
-			score += 2 * strings.Count(strings.ToLower(entry.Description), term)
-			score += strings.Count(strings.ToLower(entry.Body), term)
+			base += 2 * strings.Count(strings.ToLower(entry.Description), term)
+			base += strings.Count(strings.ToLower(entry.Body), term)
 		}
+		// A scope match is a boost on relevance, never a substitute for
+		// it: an entry that shares no term with the query is not a
+		// result, however close to the active scope it lives.
+		if base == 0 {
+			continue
+		}
+		score := base
 		if activeProject != "" && entry.Project == activeProject {
 			score += 2
 		}
 		if activeWorktree != "" && entry.Worktree == activeWorktree {
 			score += 3
 		}
-		if score > 0 {
-			ranked = append(ranked, scored{item: item, score: score})
-		}
+		ranked = append(ranked, scored{item: item, score: score})
 	}
 	sort.SliceStable(ranked, func(i, j int) bool {
 		if ranked[i].score != ranked[j].score {
@@ -305,7 +315,7 @@ func renderRecallItems(items []recallItem, maxChars int) string {
 	for _, item := range items {
 		ref := tree.Ref(item.entry, item.team)
 		b.WriteString("\n\n### [" + ref + "] " + item.entry.Title + "\n\n")
-		if item.entry.Description != "" {
+		if item.entry.Description != "" && !repeatsTheBody(item.entry.Description, item.entry.Body) {
 			b.WriteString(item.entry.Description + "\n\n")
 		}
 		b.WriteString(strings.TrimSpace(item.entry.Body))
@@ -315,4 +325,18 @@ func renderRecallItems(items []recallItem, maxChars int) string {
 		text = text[:maxChars]
 	}
 	return text
+}
+
+// repeatsTheBody reports whether the description is the first line of the
+// body. Dream backfills a missing description from that line, so printing
+// both would say the same sentence twice.
+func repeatsTheBody(description, body string) bool {
+	first := ""
+	for _, line := range strings.Split(body, "\n") {
+		if line = strings.TrimSpace(line); line != "" {
+			first = line
+			break
+		}
+	}
+	return first != "" && memory.NormBody(description) == memory.NormBody(first)
 }

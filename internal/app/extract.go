@@ -42,6 +42,9 @@ type ExtractOptions struct {
 	AllowPlainText bool
 	// CWD is where a project candidate resolves its scope.
 	CWD string
+	// Project forces the project of a project candidate. When it is set,
+	// the CWD is not consulted: the caller knows the scope.
+	Project string
 	// DryRun reports without writing memories or moving the cursor.
 	DryRun bool
 	// AutoDream runs Dream when the dirty threshold is reached.
@@ -299,7 +302,7 @@ func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, 
 	if title == "" || body == "" {
 		return candidateOutcome{Reason: "empty title or body"}
 	}
-	if !memory.IsEnglish(body) {
+	if !memory.IsEnglishStrict(body) {
 		return candidateOutcome{Reason: "body is not English"}
 	}
 	if err := secretguard.Check(title, body); err != nil {
@@ -313,14 +316,18 @@ func (a *App) extractCandidate(ctx context.Context, candidate ExtractCandidate, 
 	project := candidate.Project
 	worktree := candidate.Worktree
 	if scope == memory.TypeProject && project == "" {
-		cwd := opts.CWD
-		if cwd == "" {
-			cwd, _ = os.Getwd()
-		}
-		if info, ok := gitscope.Resolve(cwd); ok {
-			project = info.RepoSlug
-			if worktree == "" {
-				worktree = info.WorktreeID
+		if opts.Project != "" {
+			project = opts.Project
+		} else {
+			cwd := opts.CWD
+			if cwd == "" {
+				cwd, _ = os.Getwd()
+			}
+			if info, ok := gitscope.Resolve(cwd); ok {
+				project = info.RepoSlug
+				if worktree == "" {
+					worktree = info.WorktreeID
+				}
 			}
 		}
 	}

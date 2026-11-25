@@ -65,7 +65,13 @@ entry into `.qwen/team-memory/`. A detected credential blocks the write.
 When the title already exists, the body is appended to the entry instead of
 creating a second one. A pinned entry refuses the append unless `--force` is
 passed; a forced append keeps the pin and records `forced on pinned` in the
-write log. `--pinned=false` does not release an entry: use `unpin`.
+write log. `--pinned=false` does not release an entry: use `unpin`. The team
+store follows the same pin rule: `--team` refuses a pinned title without
+`--force`.
+
+`--worktree auto` works with any scope. It resolves the repository and the
+linked worktree from the working directory; in the main checkout, where there
+is no linked worktree, the entry stays repository-wide.
 
 ### `pin <title>`
 
@@ -90,7 +96,10 @@ Returns the memory tree router, a focused subtree, exact refs or a ranked
 query. `--tree` is the compact router; `--category` returns one or more
 subtrees; `--ref` fetches full bodies; `--query` ranks by title, keywords,
 category, usage scenarios, description and body, boosting the active project
-and worktree. `--llm` lets the configured OpenAI-compatible model select the
+and worktree. The optional client is off until `llm_enabled` is true (or a
+base URL/model is configured); with the toggle on and no `llm_base_url`, the
+adapter uses
+`http://127.0.0.1:8080/v1`. `--llm` lets that model select the
 refs; every returned ref is validated. The default limits are 5 entries and
 12,000 characters.
 

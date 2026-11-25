@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/lindoelio/smart-agents-memory/internal/vault"
@@ -30,6 +31,8 @@ const (
 	EnvDatabase = "SMART_AGENTS_MEMORY_DATABASE"
 	// EnvLLMProvider overrides the LLM adapter.
 	EnvLLMProvider = "SMART_AGENTS_MEMORY_LLM_PROVIDER"
+	// EnvLLMEnabled turns the optional LLM client on or off.
+	EnvLLMEnabled = "SMART_AGENTS_MEMORY_LLM_ENABLED"
 	// EnvLLMBaseURL overrides the LLM base URL.
 	EnvLLMBaseURL = "SMART_AGENTS_MEMORY_LLM_URL"
 	// EnvLLMModel overrides the LLM model.
@@ -70,6 +73,10 @@ type File struct {
 	ProjectionRoot string `json:"projection_root,omitempty"`
 	// LLMProvider is the JSON client adapter (default openai).
 	LLMProvider string `json:"llm_provider,omitempty"`
+	// LLMEnabled turns the optional client on. Off by default, so a
+	// command never reaches the network unless the deployment asked it
+	// to; the adapter applies the local gateway URL when none is set.
+	LLMEnabled bool `json:"llm_enabled"`
 	// LLMBaseURL is the OpenAI-compatible base URL.
 	LLMBaseURL string `json:"llm_base_url,omitempty"`
 	// LLMModel is the model name.
@@ -145,12 +152,20 @@ func Resolve(opts Options) (vault.Config, string, error) {
 		return vault.Config{}, path, fmt.Errorf("the notion gateway was removed in 0.2.0 because it was not verified against the Notion API")
 	}
 
+	llmEnabled := file.LLMEnabled
+	if raw := strings.TrimSpace(os.Getenv(EnvLLMEnabled)); raw != "" {
+		if value, err := strconv.ParseBool(raw); err == nil {
+			llmEnabled = value
+		}
+	}
+
 	cfg := vault.Config{
 		Backend:        backend,
 		MemoryHome:     file.MemoryHome,
 		SQLitePath:     file.SQLitePath,
 		ProjectionRoot: file.ProjectionRoot,
 		LLMProvider:    firstNonEmpty(os.Getenv(EnvLLMProvider), file.LLMProvider, "openai"),
+		LLMEnabled:     llmEnabled,
 		LLMBaseURL:     firstNonEmpty(os.Getenv(EnvLLMBaseURL), file.LLMBaseURL),
 		LLMModel:       firstNonEmpty(os.Getenv(EnvLLMModel), file.LLMModel),
 		LLMKeyEnv:      firstNonEmpty(os.Getenv(EnvLLMKeyEnv), file.LLMKeyEnv, DefaultLLMKeyEnv),

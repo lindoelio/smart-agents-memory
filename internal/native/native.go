@@ -165,14 +165,16 @@ func RenderQwen(e memory.Entry) string {
 	}
 	var b strings.Builder
 	b.WriteString("---\n")
-	b.WriteString("name: " + e.Title + "\n")
-	b.WriteString("description: " + desc + "\n")
+	// Every scalar is quoted: a title or a description may contain a
+	// colon, a hash or a bracket, and the Qwen reader parses real YAML.
+	b.WriteString("name: " + yamlScalar(e.Title) + "\n")
+	b.WriteString("description: " + yamlScalar(desc) + "\n")
 	b.WriteString("type: " + ntype + "\n")
-	b.WriteString("category: " + memory.InferCategory(e) + "\n")
+	b.WriteString("category: " + yamlScalar(memory.InferCategory(e)) + "\n")
 	if len(e.Keywords) > 0 {
 		b.WriteString("keywords:\n")
 		for _, k := range e.Keywords {
-			b.WriteString("  - " + k + "\n")
+			b.WriteString("  - " + yamlScalar(k) + "\n")
 		}
 	}
 	if len(e.UsageScenarios) > 0 {

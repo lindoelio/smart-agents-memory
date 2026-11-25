@@ -937,3 +937,37 @@ func schedulerPath(home string) string {
 	}
 	return filepath.Join(home, "Library", "LaunchAgents", "com.smart-agents-memory.sync.plist")
 }
+
+func TestBriefAutoDetectsTheLinkedWorktree(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("HOME", t.TempDir())
+	repo := newCLIRepo(t)
+	worktree := newCLIWorktree(t, repo, "feature")
+	t.Chdir(worktree)
+
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
+		"add", "--scope", "lesson", "--worktree", "auto",
+		"--title", "A branch lesson", "--body", "The branch lesson. Why: branch local.")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s %s", code, out, errOut)
+	}
+	note := filepath.Join(root, "corpus", "lesson", "a-branch-lesson.md")
+	data, err := os.ReadFile(note)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "project: repo") || !strings.Contains(string(data), "worktree: feature") {
+		t.Fatalf("the lesson worktree scope is wrong:\n%s", data)
+	}
+
+	code, out, errOut = run(t, "--vault", "obsidian", "--memory-home", root, "brief")
+	if code != 0 {
+		t.Fatalf("the exit code is %d: %s", code, errOut)
+	}
+	if !strings.Contains(out, "## Worktree: repo@feature") || !strings.Contains(out, "A branch lesson") {
+		t.Fatalf("the brief did not scope the worktree:\n%s", out)
+	}
+	if strings.Contains(errOut, "not found") {
+		t.Fatalf("auto-detection warned: %s", errOut)
+	}
+}

@@ -1004,3 +1004,31 @@ func TestImportHotReportsAReadFailureBetweenEntries(t *testing.T) {
 		t.Fatal("a failed read between entries was not reported")
 	}
 }
+
+func TestExportRemovesAStalePinnedFile(t *testing.T) {
+	ctx := context.Background()
+	r, _, projections := newReconciler(t)
+	pinned := []memory.Entry{{
+		Title: "A pinned topic", Type: memory.TypeLesson, Native: "qwen",
+		Pinned: true, Body: "The body.", NativeFile: "topic.md",
+	}}
+	if _, err := r.Export(ctx, pinned); err != nil {
+		t.Fatal(err)
+	}
+	if !projections.Exists(native.TargetQwen, "pinned/topic.md") {
+		t.Fatal("the pinned projection is missing")
+	}
+	unpinned := []memory.Entry{{
+		Title: "A pinned topic", Type: memory.TypeLesson, Native: "qwen",
+		Body: "The body.", NativeFile: "topic.md",
+	}}
+	if _, err := r.Export(ctx, unpinned); err != nil {
+		t.Fatal(err)
+	}
+	if projections.Exists(native.TargetQwen, "pinned/topic.md") {
+		t.Fatal("the stale pinned file survived the unpin")
+	}
+	if !projections.Exists(native.TargetQwen, "topic.md") {
+		t.Fatal("the root projection is missing")
+	}
+}

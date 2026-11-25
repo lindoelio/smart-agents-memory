@@ -97,12 +97,16 @@ smart-agents-memory add --scope project \
   --title "Decisão do projeto" --body "..."  # no repositório atual
 smart-agents-memory add --scope project --worktree auto \
   --title "Decisão da branch" --body "..."   # no worktree atual
+smart-agents-memory add --scope lesson --worktree auto \
+  --title "Lição da branch" --body "..."     # qualquer escopo pode ser do worktree
 smart-agents-memory add --scope lesson --team \
   --title "Regra compartilhada" --body "..." # em .agents/memory/
 smart-agents-memory recall --tree           # o router de categorias
 smart-agents-memory recall --query "teste flaky"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory dream --deterministic-only
+smart-agents-memory extract --transcript turn.jsonl  # uma transcrição concluída
+smart-agents-memory watch --once             # alias deprecated de sync
 smart-agents-memory sync --dry-run           # ver o que seria capturado
 smart-agents-memory sync                     # capturar turns novos dos harnesses
 smart-agents-memory install --scheduler      # rodar o sync a cada cinco minutos
@@ -118,8 +122,10 @@ smart-agents-memory path                    # onde está o store
 
 O primeiro `sync` semeia o estado no fim das transcrições já existentes e não
 extrai nada; rode `sync --backfill --since 7d` para processar o histórico
-recente explicitamente. `install --scheduler` mantém o corpus atualizado a
-cada cinco minutos, sem daemon e sem hook em nenhum harness.
+recente explicitamente. `extract` processa uma transcrição concluída sob
+demanda; `watch` continua como alias deprecated de `sync`. `install
+--scheduler` mantém o corpus atualizado a cada cinco minutos, sem daemon e sem
+hook em nenhum harness.
 
 A superfície completa está na
 [referência da CLI](skills/smart-agents-memory/references/cli-reference.md).
@@ -127,13 +133,16 @@ A superfície completa está na
 ### LLM opcional
 
 `recall --llm` e a passagem semântica do `dream` usam um endpoint compatível
-com OpenAI. O `smart-llm-gateway` local é o padrão quando não há chave; a
-OpenAI é usada quando a variável da chave existe. A configuração guarda o
-**nome** da variável, nunca a chave:
+com OpenAI. O cliente fica desligado até `llm_enabled` ser true (ou uma URL
+ou modelo ser configurado); quando ligado e sem URL, o `smart-llm-gateway`
+local é o padrão, e a OpenAI é usada quando a variável da chave existe. Uma
+chave exportada para outra ferramenta não liga o cliente sozinha. A
+configuração guarda o **nome** da variável, nunca a chave:
 
 ```json
 {
   "llm_provider": "openai",
+  "llm_enabled": true,
   "llm_base_url": "http://127.0.0.1:8080/v1",
   "llm_model": "gpt-4o-mini",
   "llm_key_env": "SMART_AGENTS_MEMORY_LLM_API_KEY"

@@ -75,9 +75,9 @@ func (a *App) index(ctx context.Context, opts indexOptions) (IndexReport, error)
 	}
 	imported += hotAdded
 	updated += hotUpdated
-	if imported+updated > 0 {
-		a.bumpDirty()
-	}
+	// The import counts the entries it brought in, not the run: the dirty
+	// count is the threshold the auto-dream uses.
+	a.bumpDirtyBy(imported + updated)
 	corpus, err = a.Vault.Entries(ctx)
 	if err != nil {
 		return report, err

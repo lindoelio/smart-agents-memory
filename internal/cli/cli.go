@@ -135,7 +135,10 @@ func build(opts config.Options, out, errOut io.Writer) (*app.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	if cfg.LLMBaseURL != "" || cfg.LLMModel != "" || os.Getenv(cfg.LLMKeyEnv) != "" {
+	// The client is opt-in: the toggle, a base URL or a model enables it.
+	// An ambient API-key variable alone does not, so a key exported for
+	// another tool never turns a local command into a network call.
+	if cfg.LLMEnabled || cfg.LLMBaseURL != "" || cfg.LLMModel != "" {
 		a.LLM = llmopenai.New(cfg.LLMBaseURL, cfg.LLMModel, cfg.LLMKeyEnv)
 	}
 	return a, nil

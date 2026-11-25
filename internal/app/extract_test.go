@@ -247,99 +247,6 @@ func TestExtractFromATranscriptPathKeepsTheCursor(t *testing.T) {
 	}
 }
 
-func TestWatchOnceExtractsNewTranscripts(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	ctx := context.Background()
-	dir := filepath.Join(t.TempDir(), "chats")
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	file := filepath.Join(dir, "session.jsonl")
-	if err := os.WriteFile(file, []byte(`{"role":"user","content":"remember this durable rule"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	h.app.LLM = &extractLLM{payload: `{"candidates":[{"scope":"lesson","title":"A watched rule","body":"The rule. Why it matters."}]}`}
-	report, err := h.app.WatchOnce(ctx, app.WatchOptions{Dirs: []string{dir}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Files != 1 || report.Added != 1 {
-		t.Fatalf("the watch report is %+v", report)
-	}
-	second, err := h.app.WatchOnce(ctx, app.WatchOptions{Dirs: []string{dir}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if second.Added != 0 {
-		t.Fatalf("the second watch re-extracted: %+v", second)
-	}
-}
-
-func TestWatchOnceIgnoresFilesThatAreNotTranscripts(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	ctx := context.Background()
-	dir := t.TempDir()
-	files := map[string]string{
-		"settings.json":  `{"theme":"dark","model":"gpt-4o-mini"}`,
-		"storage.json":   `[{"path":"a.json"},{"path":"b.json"}]`,
-		"session.json":   `{"messages":[{"role":"user","content":"a real conversation"}]}`,
-		"session.jsonl":  "{\"role\":\"user\",\"content\":\"a jsonl conversation\"}\n",
-		"plain.txt":      "a plain transcript from the user",
-		"notes.md":       "# Notes\n\nremember this durable rule",
-		"debug.log":      "not json at all, just a log line",
-		"unrelated.yaml": "key: value",
-	}
-	for name, content := range files {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	fake := &extractLLM{payload: `{"candidates":[]}`}
-	h.app.LLM = fake
-
-	report, err := h.app.WatchOnce(ctx, app.WatchOptions{Dirs: []string{dir}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// settings.json, storage.json, session.json, session.jsonl, plain.txt and
-	// debug.log are scanned; notes.md and the YAML file are not.
-	if report.Files != 6 || report.Ignored != 2 {
-		t.Fatalf("the watch report is %+v", report)
-	}
-	if fake.calls != 4 {
-		t.Fatalf("the watch called the model %d times, want 4", fake.calls)
-	}
-	if len(report.Errors) != 0 {
-		t.Fatalf("the watch reported errors: %v", report.Errors)
-	}
-	data, err := os.ReadFile(filepath.Join(h.root, ".extract-cursor.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(data), "settings.json") || strings.Contains(string(data), "storage.json") {
-		t.Fatalf("an ignored file got a cursor: %s", data)
-	}
-}
-
-func TestWatchOnceAcceptsAJSONDocumentWithMessages(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	ctx := context.Background()
-	dir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dir, "chat.json"),
-		[]byte(`{"messages":[{"role":"user","content":"a document conversation"}]}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	fake := &extractLLM{payload: `{"candidates":[]}`}
-	h.app.LLM = fake
-	report, err := h.app.WatchOnce(ctx, app.WatchOptions{Dirs: []string{dir}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if report.Files != 1 || report.Ignored != 0 || fake.calls != 1 {
-		t.Fatalf("the document was not extracted: %+v calls=%d", report, fake.calls)
-	}
-}
-
 func TestInstallHooksWritesAnAbsoluteCommandAndReadme(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	path, lines, err := h.app.InstallHooks()
@@ -474,5 +381,32 @@ func TestExtractStopsOnAWriteFailureAndRetriesWithoutDuplicates(t *testing.T) {
 	}
 	if fake.calls != 2 || third.SkippedReason != "no_new_user_turns" {
 		t.Fatalf("the recovered cursor did not advance: %+v calls=%d", third, fake.calls)
+	}
+}
+
+func TestExtractHonorsTheExplicitProject(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	h.app.LLM = &extractLLM{payload: `{"candidates":[{"scope":"project","title":"A project decision","body":"The client lives in apps/client. Why: the web app is separate."}]}`}
+	repo := newRepo(t)
+	worktree := newLinkedWorktree(t, repo, "feature")
+	report, err := h.app.Extract(ctx, app.ExtractOptions{
+		Transcript: `{"role":"user","content":"the client lives in apps/client"}`,
+		SessionID:  "project",
+		Project:    "explicit",
+		CWD:        worktree,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Added != 1 {
+		t.Fatalf("the candidate was not added: %+v", report)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Project != "explicit" || entries[0].Worktree != "" {
+		t.Fatalf("the explicit project was overwritten: %+v", entries)
 	}
 }

@@ -45,6 +45,9 @@ var rules = []rule{
 	{id: "sendgrid-api-token", pattern: `SG\.[\w-]{22}\.[\w-]{43}`},
 	{id: "npm-access-token", pattern: `npm_[a-zA-Z0-9]{36}`},
 	{id: "stripe-access-token", pattern: `(?:sk|rk)_(?:test|live|prod)_[a-zA-Z0-9]{10,99}`},
+	// The private-key rule is deliberately wider than the gitleaks text
+	// ({64,16384}): [\s\S-] is every character, so a PEM body longer than
+	// 16384 bytes still matches. A missed key is worse than a broad rule.
 	{id: "private-key", pattern: `(?is)-----BEGIN[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----[\s\S-]{64,}?-----END[ A-Z0-9_-]{0,100}PRIVATE KEY(?: BLOCK)?-----`},
 }
 

@@ -484,13 +484,9 @@ func (r *Reconciler) candidates() []memory.Entry {
 			out = append(out, e)
 		}
 	}
-	var qwenFiles []string
-	if files, err := r.Projections.List(native.TargetQwen, ""); err == nil {
-		qwenFiles = append(qwenFiles, files...)
-	}
-	if files, err := r.Projections.List(native.TargetQwen, "pinned"); err == nil {
-		qwenFiles = append(qwenFiles, files...)
-	}
+	// The Qwen listing includes pinned/*.md: the projection owns both
+	// directories, and the reconciler must read them as one store.
+	qwenFiles, _ := r.Projections.List(native.TargetQwen, "")
 	for _, rel := range qwenFiles {
 		if rel == "MEMORY.md" {
 			continue

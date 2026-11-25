@@ -121,3 +121,24 @@ func TestUnknownToolIsAnErrorContent(t *testing.T) {
 		t.Fatalf("the unknown tool was not an error: %+v", result)
 	}
 }
+
+func TestMemoryAddRejectsAnEmptyTitle(t *testing.T) {
+	a := newApp(t)
+	if _, err := a.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	server := NewServer(a)
+	input := `{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"memory_add","arguments":{"scope":"lesson","title":"  ","body":"The rule."}}}` + "\n"
+	out := &bytes.Buffer{}
+	if err := server.Serve(context.Background(), strings.NewReader(input), out); err != nil {
+		t.Fatal(err)
+	}
+	var resp map[string]any
+	if err := json.Unmarshal(out.Bytes(), &resp); err != nil {
+		t.Fatal(err)
+	}
+	result := resp["result"].(map[string]any)
+	if result["isError"] != true {
+		t.Fatalf("the empty title was accepted: %+v", result)
+	}
+}

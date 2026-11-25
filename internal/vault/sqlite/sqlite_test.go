@@ -201,3 +201,25 @@ func TestRenameRemoveProjectNoteAndLiteralSearch(t *testing.T) {
 		t.Fatalf("the corpus is %+v", entries)
 	}
 }
+
+func TestCreateRejectsAnEmptyTitle(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	opened, err := vault.Open(vault.Config{
+		Backend:        "sqlite",
+		SQLitePath:     filepath.Join(dir, "memory.db"),
+		ProjectionRoot: dir,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	store := opened.(*Store)
+	if err := store.Ensure(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Create(ctx, memory.Entry{
+		Title: " ", Type: memory.TypeLesson, Body: "The rule.",
+	}); err == nil {
+		t.Fatal("the empty title was accepted")
+	}
+}

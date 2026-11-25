@@ -148,3 +148,103 @@ func TestRecallIncludesTeamMemoryWithoutAPrivateStore(t *testing.T) {
 		t.Fatalf("the team ref is %v", result.Refs)
 	}
 }
+
+func TestRecallQueryDoesNotReturnUnrelatedScopedEntries(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "project", Title: "A repo decision", Body: "The client lives in apps/client.",
+		Project: "repo", CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A shared rule", Body: "Ship through Git.",
+		Team: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.app.Recall(ctx, app.RecallOptions{Query: "zzzznothing", CWD: repo})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Text != "" || len(result.Refs) != 0 {
+		t.Fatalf("a non-matching query returned %q %v", result.Text, result.Refs)
+	}
+}
+
+func TestRecallQueryBoostsTheActiveScope(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Cache outside the repo", Body: "One rule.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Cache inside the repo", Body: "One rule.",
+		Project: "repo", CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.app.Recall(ctx, app.RecallOptions{Query: "cache", CWD: repo, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Refs) != 2 || result.Refs[0] != "lesson:cache-inside-the-repo" {
+		t.Fatalf("the scope boost did not rank first: %v", result.Refs)
+	}
+}
+
+func TestRecallQueryExcludesHotEntries(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "user", Title: "Hot profile rule", Body: "Answer in Portuguese.",
+		Tier: "hot",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Portuguese lesson", Body: "The lesson about Portuguese.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.app.Recall(ctx, app.RecallOptions{Query: "Portuguese", Limit: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Text, "Hot profile rule") {
+		t.Fatalf("the hot entry entered the ranking: %q", result.Text)
+	}
+	if !strings.Contains(result.Text, "Portuguese lesson") {
+		t.Fatalf("the cold match is missing: %q", result.Text)
+	}
+	byRef, err := h.app.Recall(ctx, app.RecallOptions{Refs: []string{"user:hot-profile-rule"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(byRef.Text, "Hot profile rule") {
+		t.Fatalf("a hot ref stopped working: %q", byRef.Text)
+	}
+}
+
+func TestRenderRecallItemsDoesNotRepeatTheBody(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "One sentence", Body: "The rule. Why: it matters.",
+		Description: "The rule. Why: it matters.",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	result, err := h.app.Recall(ctx, app.RecallOptions{Refs: []string{"lesson:one-sentence"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Count(result.Text, "The rule. Why: it matters."); got != 1 {
+		t.Fatalf("the sentence appears %d times: %q", got, result.Text)
+	}
+}

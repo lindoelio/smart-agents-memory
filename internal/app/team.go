@@ -59,7 +59,22 @@ func (a *App) addTeam(ctx context.Context, opts AddOptions, scope memory.Type, s
 		Category:       opts.Category,
 		UsageScenarios: opts.UsageScenarios,
 	}
-	result, err := teammemory.Open(info.WorktreeRoot).Add(ctx, entry, teammemory.AddOptions{
+	store := teammemory.Open(info.WorktreeRoot)
+	// Team memory follows the same pin rule as the private vault: a
+	// curated entry is never modified by a plain add.
+	if !opts.Force {
+		existing, err := store.Entries(ctx)
+		if err != nil {
+			return "", err
+		}
+		key := memory.NormTitle(entry.Title)
+		for _, current := range existing {
+			if memory.NormTitle(current.Title) == key && current.Pinned {
+				return "", fmt.Errorf("entry %q is pinned; pass --force to modify it", current.Title)
+			}
+		}
+	}
+	result, err := store.Add(ctx, entry, teammemory.AddOptions{
 		Force:       opts.Force,
 		ProjectQwen: opts.Native == "qwen",
 	})

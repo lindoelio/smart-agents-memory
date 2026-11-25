@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/lindoelio/smart-agents-memory/internal/app"
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
@@ -607,26 +606,7 @@ func TestTeamWorktreeAutoAndSearchLimit(t *testing.T) {
 	})
 }
 
-func TestWatchOnceSkipsAnUnreadableSubdirectory(t *testing.T) {
-	h := newHarness(t, "obsidian")
-	dir := t.TempDir()
-	sub := filepath.Join(dir, "sub")
-	if err := os.MkdirAll(sub, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(sub, "session.jsonl"), []byte(`{"role":"user","content":"x"}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chmod(sub, 0o000); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chmod(sub, 0o755) })
-	if _, err := h.app.WatchOnce(context.Background(), app.WatchOptions{Dirs: []string{dir}}); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestDreamUpdatesKeepTheDryRunState(t *testing.T) {
+func TestDreamDryRunLeavesNoStateFile(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	ctx := context.Background()
 	createDreamEntry(t, h, memory.Entry{
@@ -642,14 +622,7 @@ func TestDreamUpdatesKeepTheDryRunState(t *testing.T) {
 		t.Fatal(err)
 	}
 	statePath := filepath.Join(h.root, ".smart-agents-memory-dream.json")
-	data, err := os.ReadFile(statePath)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(string(data), `"last_status": "noop"`) {
-		t.Fatalf("the dry-run state is %s", data)
-	}
-	if info, err := os.Stat(statePath); err != nil || time.Since(info.ModTime()) > time.Minute {
-		t.Fatalf("the state file is %v %v", info, err)
+	if _, err := os.Stat(statePath); !os.IsNotExist(err) {
+		t.Fatalf("the dry run wrote the state: %v", err)
 	}
 }

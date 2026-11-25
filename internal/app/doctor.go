@@ -144,6 +144,14 @@ func (a *App) Doctor(ctx context.Context) (DoctorReport, error) {
 		}
 	}
 
+	// A symlinked team note is skipped on read. Report it so a human knows
+	// the note was ignored instead of silently losing it.
+	if info, ok := resolveScopeCWD(""); ok {
+		for _, path := range symlinkedTeamNotes(info.WorktreeRoot) {
+			report.Problems = append(report.Problems, "symlinked team note ignored: "+path)
+		}
+	}
+
 	// The skill must be installed.
 	for _, dir := range skillDirs(homeDir()) {
 		path := filepath.Join(dir, "smart-agents-memory")
@@ -193,6 +201,26 @@ func (a *App) projectionFiles() []string {
 		return nil
 	}
 	return files
+}
+
+// symlinkedTeamNotes lists the .md symlinks inside the team stores of a
+// worktree. The reader skips them on purpose; the doctor reports them so a
+// human knows the note was ignored.
+func symlinkedTeamNotes(worktreeRoot string) []string {
+	var out []string
+	for _, rel := range []string{".agents/memory", ".qwen/team-memory"} {
+		root := filepath.Join(worktreeRoot, filepath.FromSlash(rel))
+		_ = filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+			if err != nil {
+				return nil
+			}
+			if entry.Type()&os.ModeSymlink != 0 && strings.HasSuffix(entry.Name(), ".md") {
+				out = append(out, path)
+			}
+			return nil
+		})
+	}
+	return out
 }
 
 // homeDir returns the home directory of the user.

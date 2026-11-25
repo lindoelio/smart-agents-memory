@@ -1864,3 +1864,143 @@ type noRemovalVault struct {
 func (v noRemovalVault) Entries(context.Context) ([]memory.Entry, error) {
 	return v.entries, nil
 }
+
+func TestAddRejectsAnEmptyTitle(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	_, err := h.app.Add(context.Background(), app.AddOptions{
+		Scope: "lesson", Title: "   ", Body: "The rule. Why: it matters.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "empty title") {
+		t.Fatalf("the empty title was accepted: %v", err)
+	}
+}
+
+func TestAddTeamRefusesAPinnedEntryWithoutForce(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Pinned team rule", Body: "The curated rule.",
+		Tier: "cold", Team: true, Pinned: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Pinned team rule", Body: "An unforced append.",
+		Team: true, CWD: repo,
+	})
+	if err == nil || !strings.Contains(err.Error(), "is pinned") {
+		t.Fatalf("the pinned team entry accepted an append: %v", err)
+	}
+	note := filepath.Join(repo, ".agents", "memory", "corpus", "lesson", "pinned-team-rule.md")
+	data, readErr := os.ReadFile(note)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if strings.Contains(string(data), "An unforced append.") {
+		t.Fatalf("the refused append reached the note:\n%s", data)
+	}
+}
+
+func TestAddTeamForceAppendsToAPinnedEntry(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Pinned team rule", Body: "The curated rule.",
+		Team: true, Pinned: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "Pinned team rule", Body: "A forced append.",
+		Team: true, Force: true, CWD: repo,
+	}); err != nil {
+		t.Fatalf("--force did not append to the pinned team entry: %v", err)
+	}
+	note := filepath.Join(repo, ".agents", "memory", "corpus", "lesson", "pinned-team-rule.md")
+	data, readErr := os.ReadFile(note)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if !strings.Contains(string(data), "A forced append.") || !strings.Contains(string(data), "pinned: true") {
+		t.Fatalf("the forced append is wrong:\n%s", data)
+	}
+}
+
+func TestInstallWritesTheLLMToggle(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	if _, err := h.app.Install(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(h.app.ConfigPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), `"llm_enabled": false`) {
+		t.Fatalf("the configuration does not carry the toggle: %s", data)
+	}
+}
+
+func TestDoctorReportsASymlinkedTeamNote(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	dir := filepath.Join(repo, ".agents", "memory", "lesson")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside.md")
+	if err := os.WriteFile(outside, []byte("---\ntitle: Outside\ntype: lesson\n---\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dir, "linked.md")); err != nil {
+		t.Fatal(err)
+	}
+	t.Chdir(repo)
+
+	report, err := h.app.Doctor(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(strings.Join(report.Problems, "\n"), "symlinked team note ignored") {
+		t.Fatalf("the symlink was not reported: %v", report.Problems)
+	}
+}
+
+func TestAddWorktreeAutoScopesALessonToTheLinkedWorktree(t *testing.T) {
+	h := newHarness(t, "obsidian")
+	ctx := context.Background()
+	repo := newRepo(t)
+	worktree := newLinkedWorktree(t, repo, "feature")
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A branch lesson", Body: "The lesson. Why: branch local.",
+		WorktreeAuto: true, CWD: worktree,
+	}); err != nil {
+		t.Fatalf("a lesson could not resolve the worktree: %v", err)
+	}
+	entries, err := h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Project != "repo" || entries[0].Worktree != "feature" {
+		t.Fatalf("the lesson scope is %+v", entries)
+	}
+
+	// The main checkout has no linked worktree: the entry stays repo-wide.
+	if _, err := h.app.Add(ctx, app.AddOptions{
+		Scope: "lesson", Title: "A repo lesson", Body: "The lesson. Why: repo wide.",
+		WorktreeAuto: true, CWD: repo,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err = h.app.Vault.Entries(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, entry := range entries {
+		if entry.Title == "A repo lesson" && (entry.Project != "repo" || entry.Worktree != "") {
+			t.Fatalf("the repo-wide lesson is %+v", entry)
+		}
+	}
+}

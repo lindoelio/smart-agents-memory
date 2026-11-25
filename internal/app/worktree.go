@@ -64,9 +64,6 @@ func (a *App) resolveAddScope(opts *AddOptions, scope memory.Type) error {
 		}
 	}
 	if opts.WorktreeAuto {
-		if opts.Project == "" && scope != memory.TypeProject {
-			return fmt.Errorf("--worktree auto needs a project; pass --project or --scope project")
-		}
 		info, ok := resolveScopeCWD(opts.CWD)
 		if !ok {
 			return fmt.Errorf("not inside a git repository; cannot resolve --worktree auto")

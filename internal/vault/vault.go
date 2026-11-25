@@ -144,6 +144,9 @@ type Config struct {
 	ProjectionRoot string `json:"projection_root,omitempty"`
 	// LLMProvider is the JSON client adapter (default openai).
 	LLMProvider string `json:"llm_provider,omitempty"`
+	// LLMEnabled turns the optional client on. The adapter then applies
+	// its default base URL when none is configured.
+	LLMEnabled bool `json:"llm_enabled"`
 	// LLMBaseURL is the OpenAI-compatible base URL.
 	LLMBaseURL string `json:"llm_base_url,omitempty"`
 	// LLMModel is the model name.

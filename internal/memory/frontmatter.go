@@ -135,7 +135,7 @@ func Format(e Entry) string {
 	if len(e.Keywords) > 0 {
 		b.WriteString("keywords:\n")
 		for _, k := range e.Keywords {
-			b.WriteString("  - " + k + "\n")
+			b.WriteString("  - " + yamlScalar(k) + "\n")
 		}
 	}
 	if len(e.UsageScenarios) > 0 {
@@ -269,4 +269,15 @@ func quote(s string) string {
 		return strconv.Quote(s)
 	}
 	return strings.TrimRight(buf.String(), "\n")
+}
+
+// yamlScalar renders one list item as a YAML scalar. A plain word stays
+// plain; a value that YAML would read as a map, a comment or a number is
+// quoted, so a keyword round-trips unchanged.
+func yamlScalar(s string) string {
+	data, err := yaml.Marshal(s)
+	if err != nil {
+		return quote(s)
+	}
+	return strings.TrimSpace(string(data))
 }

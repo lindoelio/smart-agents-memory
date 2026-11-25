@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/lindoelio/smart-agents-memory/internal/memory"
 )
 
@@ -91,5 +93,42 @@ func TestRenderHotIsStable(t *testing.T) {
 	}
 	if strings.Index(got, "### Alpha") > strings.Index(got, "### Beta") {
 		t.Fatalf("user did not come before lesson:\n%s", got)
+	}
+}
+
+func TestRenderQwenIsValidYAML(t *testing.T) {
+	cases := []memory.Entry{
+		{
+			Title: "Rule: colons are fine", Type: memory.TypeLesson, Body: "A body.",
+			Description: "#1 priority", Keywords: []string{"a: b", "c#d"},
+		},
+		{
+			Title: "Acentos e emoji 🚀", Type: memory.TypeLesson, Body: "A body.",
+			Description: "Descrição: ok", Keywords: []string{"chave: valor"},
+		},
+	}
+	for _, entry := range cases {
+		rendered := RenderQwen(entry)
+		head, _, ok := splitFrontmatter(rendered)
+		if !ok {
+			t.Fatalf("no frontmatter for %q:\n%s", entry.Title, rendered)
+		}
+		var meta map[string]any
+		if err := yaml.Unmarshal([]byte(head), &meta); err != nil {
+			t.Fatalf("invalid YAML for %q: %v\n%s", entry.Title, err, rendered)
+		}
+		if meta["name"] != entry.Title {
+			t.Fatalf("the name is %v, want %q", meta["name"], entry.Title)
+		}
+		if meta["description"] != entry.Description {
+			t.Fatalf("the description is %v, want %q", meta["description"], entry.Description)
+		}
+		if got := stringList(meta["keywords"]); len(got) != len(entry.Keywords) {
+			t.Fatalf("the keywords are %v, want %v", got, entry.Keywords)
+		}
+		parsed, ok := ParseQwen(rendered, "topic.md")
+		if !ok || parsed.Title != entry.Title {
+			t.Fatalf("the round trip lost the title: %+v", parsed)
+		}
 	}
 }

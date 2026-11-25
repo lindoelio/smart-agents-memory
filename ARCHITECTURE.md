@@ -198,16 +198,19 @@ credential in a projection is skipped instead of entering the corpus.
 
 `internal/tree` builds a deterministic snapshot of the private corpus and the
 team store. A leaf carries a ref, scope, category, title, description,
-keywords, usage scenarios and the pinned flag. The revision is a SHA-256 of
+keywords, `usage_scenarios` and the pinned flag. The revision is a SHA-256 of
 the canonical leaves. The global router stays within 6000 characters; a
 category keeps at most 12 keywords.
 
 `recall --tree` returns the router or a focused subtree, `--ref` fetches exact
 bodies, and `--query` ranks by title, keywords, category, scenarios,
-description and body, boosting the active project and worktree. The same use
-case serves the MCP tools: `memory_tree` (router and revision),
+description and body, then boosts the active project and worktree. The same
+use case serves the MCP tools: `memory_tree` (router and revision),
 `memory_recall`, `memory_search`, `memory_brief` and `memory_add`. With
-`--llm`, the manifest is bounded and every returned ref is validated.
+`--llm`, the manifest is bounded and every returned ref is validated. The
+optional client is off until `llm_enabled` is set (or a base URL/model is
+configured); the adapter then defaults to the local gateway when no base URL
+is given, and an ambient API-key variable alone does not enable it.
 
 ## Consolidation
 

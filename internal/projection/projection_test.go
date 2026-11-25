@@ -246,3 +246,30 @@ func TestEnsureDirs(t *testing.T) {
 		t.Fatal("the targets were created under a file")
 	}
 }
+
+func TestListIncludesPinnedQwenTopics(t *testing.T) {
+	store := New(t.TempDir())
+	if err := store.Write(native.TargetQwen, "plain.md", "p"); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Write(native.TargetQwen, "pinned/p.md", "p"); err != nil {
+		t.Fatal(err)
+	}
+	files, err := store.List(native.TargetQwen, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]bool{"plain.md": true, "pinned/p.md": true}
+	if len(files) != len(want) {
+		t.Fatalf("the qwen root list is %v", files)
+	}
+	for _, file := range files {
+		if !want[file] {
+			t.Fatalf("unexpected qwen root entry %q in %v", file, files)
+		}
+	}
+	pinned, err := store.List(native.TargetQwen, "pinned")
+	if err != nil || len(pinned) != 1 || pinned[0] != "pinned/p.md" {
+		t.Fatalf("the pinned list is %v %v", pinned, err)
+	}
+}

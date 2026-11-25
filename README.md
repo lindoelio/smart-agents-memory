@@ -99,12 +99,16 @@ smart-agents-memory add --scope project \
   --title "Project decision" --body "..."   # scoped to the current repo
 smart-agents-memory add --scope project --worktree auto \
   --title "Branch decision" --body "..."    # scoped to the current worktree
+smart-agents-memory add --scope lesson --worktree auto \
+  --title "Branch lesson" --body "..."      # any scope can be worktree-local
 smart-agents-memory add --scope lesson --team \
   --title "Shared rule" --body "..."        # committed in .agents/memory/
 smart-agents-memory recall --tree           # the category router
 smart-agents-memory recall --query "flaky test"
 smart-agents-memory recall --ref "lesson:a-flaky-test"
 smart-agents-memory dream --deterministic-only
+smart-agents-memory extract --transcript turn.jsonl  # one finished transcript
+smart-agents-memory watch --once             # deprecated alias of sync
 smart-agents-memory sync --dry-run           # see what would be captured
 smart-agents-memory sync                     # capture new turns from the harnesses
 smart-agents-memory install --scheduler      # run sync every five minutes
@@ -120,8 +124,10 @@ smart-agents-memory path                    # where the store is
 
 The first `sync` seeds the state at the end of the transcripts already on
 disk and extracts nothing; run `sync --backfill --since 7d` to process recent
-history explicitly. `install --scheduler` keeps the corpus current every five
-minutes without a daemon or a hook in any harness.
+history explicitly. `extract` processes one finished transcript on demand;
+`watch` remains as a deprecated alias of `sync`. `install --scheduler` keeps
+the corpus current every five minutes without a daemon or a hook in any
+harness.
 
 The full surface is in
 [the CLI reference](skills/smart-agents-memory/references/cli-reference.md).
@@ -129,13 +135,17 @@ The full surface is in
 ### Optional LLM
 
 `recall --llm` and the semantic pass of `dream` use an OpenAI-compatible
-endpoint. The local `smart-llm-gateway` is the default when no key is set;
-OpenAI is used when the key environment variable exists. The configuration
-stores the **name** of the key variable, never the key:
+endpoint. The client is off until `llm_enabled` is true (or a base URL/model
+is configured); when it is on and no URL is set, the local
+`smart-llm-gateway` is the default, and OpenAI is used when the key
+environment variable exists. A key exported for another tool does not enable
+the client by itself. The configuration stores the **name** of the key
+variable, never the key:
 
 ```json
 {
   "llm_provider": "openai",
+  "llm_enabled": true,
   "llm_base_url": "http://127.0.0.1:8080/v1",
   "llm_model": "gpt-4o-mini",
   "llm_key_env": "SMART_AGENTS_MEMORY_LLM_API_KEY"

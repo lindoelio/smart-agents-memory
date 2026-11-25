@@ -53,7 +53,10 @@ default from the type, title, description and keywords.
 
 `recall --tree` renders the categories with their refs; `recall --category`
 returns one subtree; `recall --query` ranks by title, keywords, category,
-scenarios, description and body, with the active project and worktree boosted.
+scenarios, description and body, then boosts the active project and
+worktree. A keyword that YAML would read as a map, a comment or a number is
+quoted in the frontmatter; a plain word stays plain, so an existing note
+keeps its shape.
 
 ## Project and worktree scope
 

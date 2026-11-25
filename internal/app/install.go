@@ -283,6 +283,7 @@ func (a *App) Install(ctx context.Context) (InstallResult, error) {
 				SQLitePath:     a.Cfg.SQLitePath,
 				ProjectionRoot: a.Cfg.ProjectionRoot,
 				LLMProvider:    a.Cfg.LLMProvider,
+				LLMEnabled:     a.Cfg.LLMEnabled,
 				LLMBaseURL:     a.Cfg.LLMBaseURL,
 				LLMModel:       a.Cfg.LLMModel,
 				LLMKeyEnv:      a.Cfg.LLMKeyEnv,

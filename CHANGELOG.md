@@ -4,6 +4,59 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [semantic versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] — 2026-11-25
+
+### Added
+
+- **Explicit LLM toggle.** `llm_enabled` in the configuration turns the
+  optional OpenAI-compatible client on; it is off by default and `install`
+  writes it off. When it is on and no base URL is set, the adapter uses the
+  local `smart-llm-gateway`. An API-key variable exported for another tool
+  never enables the client by itself.
+- **`ExtractOptions.Project`.** A caller can force the project of an
+  extracted candidate instead of resolving it from the working directory.
+
+### Changed
+
+- `recall --query` ranks by relevance first and only then boosts the active
+  project and worktree; an entry that shares no term with the query is not a
+  result. Hot entries stay out of the ranking, and a description that repeats
+  the body's first line is printed once.
+- `--worktree auto` works with any scope. In the main checkout the entry
+  stays repository-wide; in a linked worktree it carries the worktree id.
+- The write log is read newest-first within each day.
+- The Qwen projection quotes `name`, `description`, `category` and keywords,
+  and the corpus quotes a keyword that YAML would read as a map or a comment.
+  A plain keyword stays plain.
+- `dream --dry-run` no longer writes the state file and reports the same
+  counts as a real run. The state records `idle`, `running`, `updated`,
+  `noop` and `failed`.
+- The English gate now rejects a short non-English body in `dream` and
+  `extract`; the lenient check still only warns on the command line.
+- The native import adds every imported entry to the dirty counter, so
+  `--min-dirty` and the auto-dream threshold agree with the number of
+  memories.
+
+### Fixed
+
+- `App.Add` and both store gateways reject an empty title. The doctor reports
+  a titleless entry instead of leaving it invisible.
+- `add --team` follows the pinned rule: a curated team entry refuses an
+  append without `--force`.
+- `projection.Store.List` includes `pinned/*.md` for the Qwen target.
+- The doctor reports a symlinked team note that the reader skips.
+
+### Removed
+
+- `App.WatchOnce` and its helpers. `watch` remains as a deprecated alias of
+  `sync`.
+
+### Security
+
+- The LLM client is opt-in: a command talks to an endpoint only when
+  `llm_enabled`, a base URL or a model asks it to. A key exported for another
+  tool cannot turn a local command into a network call.
+
 ## [0.3.0] — 2026-11-25
 
 ### Added

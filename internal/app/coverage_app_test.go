@@ -299,11 +299,6 @@ func TestAddResolvesTheWorktreeScopeAndItsErrors(t *testing.T) {
 		want string
 	}{
 		{
-			"auto needs a project",
-			app.AddOptions{Scope: "lesson", Title: "A", Body: "A body.", WorktreeAuto: true, CWD: repo},
-			"needs a project",
-		},
-		{
 			"auto outside a repository",
 			app.AddOptions{Scope: "lesson", Title: "A", Body: "A body.", WorktreeAuto: true, Project: "demo", CWD: t.TempDir()},
 			"git repository",

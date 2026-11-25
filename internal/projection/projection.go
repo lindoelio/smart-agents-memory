@@ -80,7 +80,27 @@ func (s *Store) Exists(target native.Target, rel string) bool {
 }
 
 // List returns the files of a target, relative to its directory.
+//
+// For the Qwen target a top-level listing includes pinned/*.md: the pinned
+// directory is part of the same store, not a subdirectory the caller has to
+// know about.
 func (s *Store) List(target native.Target, sub string) ([]string, error) {
+	out, err := s.listDir(target, sub)
+	if err != nil {
+		return nil, err
+	}
+	if target == native.TargetQwen && sub == "" {
+		pinned, err := s.listDir(target, "pinned")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, pinned...)
+	}
+	return out, nil
+}
+
+// listDir lists one directory of a target.
+func (s *Store) listDir(target native.Target, sub string) ([]string, error) {
 	dir := filepath.Join(s.TargetDir(target), sub)
 	entries, err := os.ReadDir(dir)
 	if err != nil {

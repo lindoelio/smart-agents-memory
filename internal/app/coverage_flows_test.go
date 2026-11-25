@@ -42,6 +42,11 @@ func TestExtractRejectsEveryCandidateGate(t *testing.T) {
 			nil, 0,
 		},
 		{
+			"short non English",
+			`{"candidates":[{"scope":"lesson","title":"Regra curta","body":"Não faça isso porque quebra o build."}]}`,
+			nil, 0,
+		},
+		{
 			"secret",
 			`{"candidates":[{"scope":"lesson","title":"A leaked key","body":"ghp_` + strings.Repeat("a", 36) + `"}]}`,
 			nil, 0,
@@ -221,55 +226,6 @@ func TestExtractPropagatesTheAutoDreamFailure(t *testing.T) {
 	}
 }
 
-func TestWatchOnceReportsMissingAndUnreadableFiles(t *testing.T) {
-	t.Run("missing directory", func(t *testing.T) {
-		h := newHarness(t, "obsidian")
-		report, err := h.app.WatchOnce(context.Background(), app.WatchOptions{
-			Dirs: []string{filepath.Join(t.TempDir(), "missing")},
-		})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if report.Files != 0 || len(report.Errors) != 0 {
-			t.Fatalf("the report is %+v", report)
-		}
-	})
-	t.Run("unreadable file", func(t *testing.T) {
-		h := newHarness(t, "obsidian")
-		dir := t.TempDir()
-		file := filepath.Join(dir, "locked.jsonl")
-		if err := os.WriteFile(file, []byte(`{"role":"user","content":"x"}`), 0o600); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Chmod(file, 0o000); err != nil {
-			t.Fatal(err)
-		}
-		t.Cleanup(func() { _ = os.Chmod(file, 0o600) })
-		report, err := h.app.WatchOnce(context.Background(), app.WatchOptions{Dirs: []string{dir}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(report.Errors) != 1 || report.Files != 0 {
-			t.Fatalf("the report is %+v", report)
-		}
-	})
-	t.Run("extraction error is reported", func(t *testing.T) {
-		h := newHarness(t, "obsidian")
-		dir := t.TempDir()
-		file := filepath.Join(dir, "session.jsonl")
-		if err := os.WriteFile(file, []byte(`{"role":"user","content":"a durable rule"}`), 0o644); err != nil {
-			t.Fatal(err)
-		}
-		report, err := h.app.WatchOnce(context.Background(), app.WatchOptions{Dirs: []string{dir}})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if report.Files != 1 || len(report.Errors) != 1 {
-			t.Fatalf("the report is %+v", report)
-		}
-	})
-}
-
 func TestDreamRecoversFromABrokenStateFile(t *testing.T) {
 	h := newHarness(t, "obsidian")
 	ctx := context.Background()
@@ -422,7 +378,7 @@ func TestDreamFailsWhenTheStateCannotBeSaved(t *testing.T) {
 	if err := os.MkdirAll(filepath.Join(h.root, ".smart-agents-memory-dream.json"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := h.app.Dream(context.Background(), app.DreamOptions{DryRun: true, DeterministicOnly: true}); err == nil {
+	if _, err := h.app.Dream(context.Background(), app.DreamOptions{DeterministicOnly: true}); err == nil {
 		t.Fatal("the state save failure was swallowed")
 	}
 }

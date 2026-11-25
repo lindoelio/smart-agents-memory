@@ -367,6 +367,11 @@ type AddOptions struct {
 
 // Add records one durable memory.
 func (a *App) Add(ctx context.Context, opts AddOptions) (string, error) {
+	title := strings.TrimSpace(opts.Title)
+	if title == "" {
+		return "", fmt.Errorf("empty title")
+	}
+	opts.Title = title
 	scope := memory.Type(opts.Scope)
 	if scope == "" {
 		scope = memory.TypeLesson

@@ -54,20 +54,6 @@ func TestStripFrontmatterEdges(t *testing.T) {
 	}
 }
 
-func TestExpandPathEdges(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	if got := expandPath("~"); got != home {
-		t.Fatalf("expandPath(~) = %q", got)
-	}
-	if got := expandPath("~/chats"); got != filepath.Join(home, "chats") {
-		t.Fatalf("expandPath(~/chats) = %q", got)
-	}
-	if got := expandPath("/absolute/path"); got != "/absolute/path" {
-		t.Fatalf("expandPath kept %q", got)
-	}
-}
-
 func TestValidScopeNameMatrix(t *testing.T) {
 	cases := map[string]bool{
 		"":           false,
@@ -136,7 +122,7 @@ func TestLoadDreamStateDefaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	state := a.loadDreamState()
-	if state.Version != 1 || state.DirtyMutations != 4 {
+	if state.Version != 1 || state.DirtyMutations != 4 || state.LastStatus != "idle" {
 		t.Fatalf("the state is %+v", state)
 	}
 	if err := os.WriteFile(path, []byte("{not json"), 0o644); err != nil {

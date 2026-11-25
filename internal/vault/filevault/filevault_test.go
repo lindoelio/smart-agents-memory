@@ -396,7 +396,7 @@ func TestAppendLogAndLogLines(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(lines) != 2 || !strings.HasSuffix(lines[0], "first") || !strings.HasSuffix(lines[1], "second") {
+	if len(lines) != 2 || !strings.HasSuffix(lines[0], "second") || !strings.HasSuffix(lines[1], "first") {
 		t.Fatalf("the log is %v", lines)
 	}
 	limited, err := store.LogLines(ctx, 1)
@@ -1005,5 +1005,66 @@ func TestTitleOfAnUnreadableNoteIsEmpty(t *testing.T) {
 	}
 	if got := store.titleOf(filepath.Join(store.Root(), "missing.md")); got != "" {
 		t.Fatalf("titleOf of a missing note returned %q", got)
+	}
+}
+
+func TestCreateRejectsAnEmptyTitle(t *testing.T) {
+	store := newStore(t, Options{Kind: "disk"})
+	mustEnsure(t, store)
+	_, err := store.Create(context.Background(), memory.Entry{
+		Title: "  ", Type: memory.TypeLesson, Body: "The rule.",
+	})
+	if err == nil || !strings.Contains(err.Error(), "empty title") {
+		t.Fatalf("the empty title was accepted: %v", err)
+	}
+}
+
+func TestProblemsReportsATitlelessNote(t *testing.T) {
+	store := newStore(t, Options{Kind: "disk"})
+	mustEnsure(t, store)
+	note := filepath.Join(store.CorpusDir(), "lesson", "broken.md")
+	if err := os.WriteFile(note, []byte("---\ntype: lesson\ndate: 2026-11-07\n---\n\n## \n\nThe body.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	// A project note has no type: it is not a broken entry.
+	if err := os.WriteFile(filepath.Join(store.root, "projects", "demo.md"), []byte("# Context\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	problems, err := store.Problems(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(problems) != 1 || !strings.Contains(problems[0], "note without a title") {
+		t.Fatalf("the titleless note was not reported alone: %v", problems)
+	}
+}
+
+func TestLogLinesAreNewestFirst(t *testing.T) {
+	store := newStore(t, Options{Kind: "disk"})
+	mustEnsure(t, store)
+	ctx := context.Background()
+	for _, line := range []string{"first", "second", "third"} {
+		if err := store.AppendLog(ctx, line); err != nil {
+			t.Fatal(err)
+		}
+	}
+	lines, err := store.LogLines(ctx, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(lines) != 3 {
+		t.Fatalf("the log has %d lines: %v", len(lines), lines)
+	}
+	for i, want := range []string{"third", "second", "first"} {
+		if !strings.Contains(lines[i], want) {
+			t.Fatalf("line %d is %q, want %q", i, lines[i], want)
+		}
+	}
+	limited, err := store.LogLines(ctx, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(limited) != 2 || !strings.Contains(limited[0], "third") || !strings.Contains(limited[1], "second") {
+		t.Fatalf("the limited log is %v", limited)
 	}
 }

@@ -34,7 +34,8 @@ var wordPattern = regexp.MustCompile(`[A-Za-zÀ-ÿ]+`)
 // IsEnglish reports whether the text reads as English.
 //
 // It counts English stopwords against Portuguese markers over the alphabetic
-// words. Short text is left alone: there is nothing to judge.
+// words. Short text is left alone: there is nothing to judge. The check only
+// warns, so it is deliberately permissive.
 func IsEnglish(text string) bool {
 	words := wordPattern.FindAllString(strings.ToLower(text), -1)
 	if len(words) < 8 {
@@ -50,4 +51,25 @@ func IsEnglish(text string) bool {
 		}
 	}
 	return en >= pt
+}
+
+// IsEnglishStrict is the gate the automated writers use. It applies the same
+// stopword balance as IsEnglish and additionally rejects a short text that
+// carries Portuguese markers without a single English one: the lenient check
+// exists to warn a person, not to decide whether a memory may be written.
+func IsEnglishStrict(text string) bool {
+	if !IsEnglish(text) {
+		return false
+	}
+	words := wordPattern.FindAllString(strings.ToLower(text), -1)
+	en, pt := 0, 0
+	for _, word := range words {
+		if enStopwords[word] {
+			en++
+		}
+		if ptMarkers[word] {
+			pt++
+		}
+	}
+	return !(pt > 0 && en == 0)
 }

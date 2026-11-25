@@ -131,20 +131,22 @@ func TestPathWithTheSQLiteGateway(t *testing.T) {
 func TestLogPrintsTheWriteLogNewestFirst(t *testing.T) {
 	root := t.TempDir()
 	t.Setenv("HOME", t.TempDir())
-	if code, _, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
-		"add", "--scope", "lesson", "--title", "A logged rule", "--body", "The rule."); code != 0 {
-		t.Fatalf("cannot create the entry: %s", errOut)
+	for _, title := range []string{"First logged rule", "Second logged rule", "Third logged rule"} {
+		if code, _, errOut := run(t, "--vault", "obsidian", "--memory-home", root,
+			"add", "--scope", "lesson", "--title", title, "--body", "The rule."); code != 0 {
+			t.Fatalf("cannot create %q: %s", title, errOut)
+		}
 	}
-	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "log")
+	code, out, errOut := run(t, "--vault", "obsidian", "--memory-home", root, "log", "--limit", "2")
 	if code != 0 {
 		t.Fatalf("the exit code is %d: %s", code, errOut)
 	}
-	if !strings.Contains(out, "add | lesson | A logged rule") {
-		t.Fatalf("the log is %q", out)
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("the limited log is %q", out)
 	}
-	code, out, errOut = run(t, "--vault", "obsidian", "--memory-home", root, "log", "--limit", "1")
-	if code != 0 || len(strings.Split(strings.TrimSpace(out), "\n")) != 1 {
-		t.Fatalf("the limited log is %q: %s", out, errOut)
+	if !strings.Contains(lines[0], "Third logged rule") || !strings.Contains(lines[1], "Second logged rule") {
+		t.Fatalf("the log is not newest first: %q", out)
 	}
 }
 
